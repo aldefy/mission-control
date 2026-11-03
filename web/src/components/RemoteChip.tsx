@@ -9,6 +9,7 @@ export function RemoteChip({ f }: { f?: typeof fetch }) {
   return (
     <a
       href={toHash({ view: "remote" })}
+      data-tour="remote"
       className={cn("flex h-8 items-center gap-1.5 rounded-md border px-2 font-mono text-xs whitespace-nowrap hover:border-ring", status.enabled ? "text-running" : "text-faint")}
     >
       <span className={cn("size-1.5 rounded-full", status.enabled ? "bg-running" : "bg-faint")} aria-hidden />
