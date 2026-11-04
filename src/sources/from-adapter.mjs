@@ -180,6 +180,7 @@ export function fromAdapter(adapter, { loops = () => LOOP_DEFAULTS, now = () => 
     describe: adapter.describe?.bind(adapter),
     extras: adapter.extras,
     actions: adapter.actions,
+    ui: adapter.ui, // an ES module path: the adapter's own panes on the page (see uiModule in server.mjs)
     async listItems() {
       const runs = await adapter.listRuns()
       const items = await Promise.all(runs.map((r) => load(r.id)))

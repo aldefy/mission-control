@@ -5,6 +5,8 @@ import { CopyResume } from "@/components/CopyResume"
 import { Steer } from "@/components/Steer"
 import { LiveTrace } from "@/components/LiveTrace"
 import { RunBannerView } from "@/components/RunBanner"
+import { PaneMount } from "@/components/PaneMount"
+import { paneCtx, paneTabKey, usePanes } from "@/lib/panes"
 import { IconAction } from "@/components/IconAction"
 import { Retry } from "@/components/Retry"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -147,6 +149,9 @@ export default function Item({ source, id, tab, call }: { source: string; id: st
   const [hoverLane, setHoverLane] = useState<string | null>(null)
 
   const src = sources.data?.find((s) => s.name === source)
+  // Tabs the source's adapter ships itself (pane plugins, lib/panes.ts).
+  const panes = usePanes(src?.ui, d?.summary.kind)
+  const ctxForPanes = useMemo(() => (d ? paneCtx(source, id, d) : null), [source, id, d])
   const actions = src?.actions ?? []
   const v1Run = !!d && d.summary.kind === "run" && caps.data?.adapter === source
   const events = useMemo(() => (Array.isArray(d?.events) ? d!.events : []), [d])
@@ -169,7 +174,9 @@ export default function Item({ source, id, tab, call }: { source: string; id: st
       </Alert>
     )
 
-  const tabs = itemTabs({ v1Run, extras: src?.extras ?? caps.data?.extras ?? [], events, turns: isSession && (d.summary.harness === "claude-code" || d.summary.harness === "codex") })
+  const builtIn = itemTabs({ v1Run, extras: src?.extras ?? caps.data?.extras ?? [], events, turns: isSession && (d.summary.harness === "claude-code" || d.summary.harness === "codex") })
+  const tabs = [...builtIn, ...panes.map((p) => paneTabKey(p.id))]
+  const paneLabel = (t: string) => panes.find((p) => paneTabKey(p.id) === t)?.label
   const current = tabs.includes(tab) ? tab : "lanes"
   const go = (t: string) => (location.hash = toHash({ view: "item", source, id, tab: t }))
   const lanesFor = (ids: string[] | null) => (ids ? d.lanes.filter((l) => ids.includes(l.id)) : [])
@@ -195,7 +202,7 @@ export default function Item({ source, id, tab, call }: { source: string; id: st
           <TabsList variant="line" className="border-b" data-tour="tabs">
             {tabs.map((t) => (
               <TabsTrigger key={t} value={t} data-tour={`tab-${t}`}>
-                {LABEL[t] ?? t}
+                {LABEL[t] ?? paneLabel(t) ?? t}
                 {t === "lanes" && <Count n={d.lanes.length} />}
                 {t === "calls" && <Count n={d.summary.counts?.calls} />}
                 {t === "board" && <TaskCount id={id} refresh={v1?.refresh ?? 0} />}
@@ -257,6 +264,11 @@ export default function Item({ source, id, tab, call }: { source: string; id: st
               {current === "turns" && <Turns source={source} id={id} lanes={d.lanes} live={d.summary.live} />}
             </TabsContent>
           )}
+          {panes.map((p) => (
+            <TabsContent key={p.id} value={paneTabKey(p.id)} className="pt-4">
+              {current === paneTabKey(p.id) && ctxForPanes && <PaneMount pane={p} ctx={ctxForPanes} />}
+            </TabsContent>
+          ))}
           <TabsContent value="chat" className="pt-4">
             {current === "chat" &&
               (v1Run && v1 ? (

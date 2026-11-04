@@ -272,7 +272,7 @@ Anything with `listItems` is used as is. The types are in `src/sources/types.mjs
   getSession(id, name): Promise<{ text, truncated? } | null>,
   getTurns?(id, lane, { before?, limit? }),     // Chat tab pages: { lane, total, start, turns }
   usage?({ from?, to?, tz? }): Promise<UsageRow[]>,
-  extras?, actions?, describe?(),               // served under /api/item/<source>/<id>/x/<key> and /action/<name>
+  extras?, actions?, ui?, describe?(),               // served under /api/item/<source>/<id>/x/<key> and /action/<name>
 }
 ```
 
@@ -412,6 +412,39 @@ node bin/mission-control.mjs --adapter /work/my-harness-adapter.mjs --runs /work
 ```
 
 Mission Control's own sources never write; an adapter decides for itself what its actions do. Keep them narrow: check the id, accept only the fields you expect.
+
+## Your own tabs on the page (pane plugins, v2.6)
+
+An adapter can ship UI of its own. Set `ui` to the absolute path of one ES module. The page loads it from `/ui/<source>/page.js` and calls its default export with a host:
+
+```js
+// my-harness/ui.mjs: runs in the browser, so no node: imports
+export default function register(host) {
+  host.tabs.register({
+    id: "reports",            // lowercase, a-z 0-9 _ -
+    label: "Reports",
+    kinds: ["run"],           // optional: only on these item kinds
+    mount(el, ctx) {          // el: an empty element; ctx: { source, id, item, action(name, body), extra(name, params) }
+      el.textContent = `${ctx.item.events.length} events`
+      return { update(next) { el.textContent = `${next.item.events.length} events` }, unmount() {} }
+    },
+  })
+}
+```
+
+```js
+// the adapter
+export default function create() {
+  return { name: "my-harness", listRuns, getRun, getSession, ui: new URL("./ui.mjs", import.meta.url).pathname }
+}
+```
+
+- The tab appears after the built-in ones on every item from that source. `update` runs whenever the item changes, which is pushed live, so a pane stays current without its own polling.
+- Draw with the DOM and style with the page's CSS variables (`var(--border)`, `var(--muted-foreground)`, `var(--looping)`, and so on), so it follows the theme. Put text in with `textContent` or `append`, never `innerHTML`, because run data comes from agents.
+- `ctx.action` calls your adapter's actions, and `ctx.extra` builds the URL of one of your extras.
+- Only that one file is served, and only when the path is absolute and ends in `.js` or `.mjs`. It is your adapter's code, which already runs in the dashboard process. A module that fails to load adds no tabs and logs a warning.
+
+Ronin uses this for its Reports tab (`lib/dashboard-adapter/ronin-ui.mjs`), which shows each stage's checked report.
 
 ## Test it with the demo
 
