@@ -2,7 +2,7 @@ import { createServer as createHttpServer } from "node:http"
 import { HARNESSES, cancel, enqueue, listQueued } from "./steer.mjs"
 import { appendFileSync, existsSync, mkdirSync, renameSync, statSync } from "node:fs"
 import { readFile, realpath } from "node:fs/promises"
-import { dirname, extname, join, resolve, sep } from "node:path"
+import { dirname, extname, isAbsolute, join, resolve, sep } from "node:path"
 import { fileURLToPath } from "node:url"
 import { isRunId, isSessionName } from "./names.mjs"
 import { crewStats } from "./crew.mjs"
@@ -58,6 +58,16 @@ export function json(res, body, status = 200) {
   }
   res.writeHead(status, headers)
   res.end(text)
+}
+
+/**
+ * A source's pane module (adapter `ui`: an absolute path to one .js/.mjs file), or null. The page loads it from
+ * /ui/<source>/page.js and calls its default export with the pane host (web/src/lib/panes.ts). It is the
+ * adapter's own code, which already runs in this process; only that one file is served.
+ */
+export function uiModule(s) {
+  const p = s?.ui
+  return typeof p === "string" && isAbsolute(p) && /\.m?js$/.test(p) && existsSync(p) ? p : null
 }
 
 async function serveStatic(res, distDir, pathname) {
@@ -211,6 +221,7 @@ async function apiV2(ctx, req, res, url, parts) {
     await registry.list() // refresh per-source errors
     return json(res, registry.sources().map((s) => ({
       name: s.name, harness: s.harness, extras: Object.keys(s.extras ?? {}), actions: Object.keys(s.actions ?? {}), source: s.describe?.().source ?? null,
+      ui: uiModule(s) ? `/ui/${encodeURIComponent(s.name)}/page.js` : null,
       ...(registry.error(s.name) ? { error: registry.error(s.name) } : {}),
     })))
   }
@@ -505,6 +516,13 @@ export function createServer(input, { port = 4319, distDir = DEFAULT_DIST, git, 
         return openEvents(req, res)
       }
       if (url.pathname.startsWith("/api/")) return await api(ctx, req, res, url)
+      const ui = url.pathname.match(/^\/ui\/([\w.-]+)\/page\.js$/)
+      if (ui && (req.method === "GET" || req.method === "HEAD")) {
+        const file = uiModule(registry.sources().find((x) => x.name === ui[1]))
+        if (!file) return json(res, { error: "not found" }, 404)
+        res.writeHead(200, { ...SECURITY_HEADERS, "content-type": "text/javascript; charset=utf-8", "cache-control": "no-store" })
+        return res.end(req.method === "HEAD" ? undefined : await readFile(file))
+      }
       return await serveStatic(res, distDir, url.pathname)
     } catch (e) {
       json(res, { error: String(e?.message ?? e) }, 500)

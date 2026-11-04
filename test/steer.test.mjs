@@ -86,3 +86,27 @@ test("server: steer routes queue, list and cancel for an open session; refuse ot
     await srv.close()
   }
 })
+
+test("server: an adapter's ui module is listed and served at /ui/<source>/page.js, nothing else", async () => {
+  const dir = tmp("mc-ui-")
+  const file = join(dir, "panes.mjs")
+  writeFileSync(file, "export default (host) => host.tabs.register({ id: 'x', label: 'X', mount() {} })\n")
+  const adapter = { name: "harn", listRuns: async () => [], getRun: async () => null, getSession: async () => null, ui: file }
+  const bad = { name: "rel", listRuns: async () => [], getRun: async () => null, getSession: async () => null, ui: "panes.mjs" }
+  const distDir = tmp("mc-dist-")
+  writeFileSync(join(distDir, "index.html"), "ok")
+  const srv = await createServer([adapter, bad], { port: 0, distDir })
+  const base = `http://127.0.0.1:${srv.port}`
+  try {
+    const list = await (await fetch(base + "/api/sources")).json()
+    assert.deepEqual(list.map((s) => s.ui), ["/ui/harn/page.js", null])
+    const r = await fetch(base + "/ui/harn/page.js")
+    assert.equal(r.status, 200)
+    assert.match(r.headers.get("content-type"), /javascript/)
+    assert.match(await r.text(), /host\.tabs\.register/)
+    assert.equal((await fetch(base + "/ui/rel/page.js")).status, 404)
+    assert.equal((await fetch(base + "/ui/nope/page.js")).status, 404)
+  } finally {
+    await srv.close()
+  }
+})
