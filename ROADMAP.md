@@ -51,6 +51,10 @@ Session management, from Ayush Priyam's work (#3, #4, #5):
 - CI runs on Node 20.19, 22 and 24.
 - Fixed: session titles disappeared from the Recent table on a 1440px-wide screen.
 
+## Done in v2.6.2
+
+- **Approve (sign) only where signing applies.** Needs you offered Approve (sign) / Send back on every owner stop of a source that can sign, so a Ronin product question ("Which feature should this run build first?") showed them and the click failed with "no contract waiting to be signed". A stop now says it is signable (`sign: true` on the stop event); only those get Sign, on the card and in the queue. Every other question keeps the answer box and Answer….
+
 ## Done in v2.6.1
 
 - **An agent's question inside a run is Needs you.** When an agent in a harness run (Ronin's OpenCode researcher, for example) pauses on a question or a permission request, the run now waits on you: it shows in Needs you with the question as its reason. The run page shows a form with each question's options. Your answer goes back through the adapter's `reply` or `approve` action.
