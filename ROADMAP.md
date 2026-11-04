@@ -51,6 +51,13 @@ Session management, from Ayush Priyam's work (#3, #4, #5):
 - CI runs on Node 20.19, 22 and 24.
 - Fixed: session titles disappeared from the Recent table on a 1440px-wide screen.
 
+## Done in v2.6.1
+
+- **An agent's question inside a run is Needs you.** When an agent in a harness run (Ronin's OpenCode researcher, for example) pauses on a question or a permission request, the run now waits on you: it shows in Needs you with the question as its reason. The run page shows a form with each question's options. Your answer goes back through the adapter's `reply` or `approve` action.
+- The question clears as soon as your answer is saved or the run ends. The right-hand card points to the form instead of offering Approve (sign), which does not apply to an agent question.
+- An `unverified` stop (Ronin's report contract) waits on you like a `human` stop, instead of reading as stopped.
+- A run with no checks, such as a research run, ends as Done instead of "built, not verified".
+
 ## Done in v2.6
 
 From a study of iii.dev and ThreadPage:
