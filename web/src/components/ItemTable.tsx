@@ -1,10 +1,13 @@
 import { useMemo, useState } from "react"
-import { ArrowDown, ArrowUp } from "lucide-react"
-import type { ItemSummary, Status } from "@/lib/api"
+import { Archive, ArchiveRestore, ArrowDown, ArrowUp, Pencil, Pin, PinOff } from "lucide-react"
+import { postMark, type ItemSummary, type Status } from "@/lib/api"
 import { ago, compact, money } from "@/lib/format"
 import { toHash } from "@/lib/route"
 import { worktreeLabel } from "@/lib/tree"
 import { cn } from "@/lib/utils"
+import { RenameForm } from "@/components/RenameForm"
+import { CopyResume } from "@/components/CopyResume"
+import { IconAction } from "@/components/IconAction"
 import { STATUS_LABEL, STATUS_TEXT, StatusDot } from "@/components/StatusDot"
 
 export type SortKey = "title" | "where" | "harness" | "status" | "lanes" | "calls" | "cost" | "sinceChange" | "updated"
@@ -18,7 +21,7 @@ const KEYS: Record<SortKey, (i: ItemSummary) => string | number> = {
   title: (i) => (i.title || i.id).toLowerCase(),
   where,
   harness: (i) => i.harness,
-  status: (i) => URGENCY.indexOf(i.status),
+  status: (i) => URGENCY.indexOf(i.status) + (i.open === false ? URGENCY.length : 0),
   lanes: (i) => i.counts.lanes,
   calls: (i) => i.counts.calls,
   cost: (i) => i.cost ?? 0,
@@ -27,16 +30,19 @@ const KEYS: Record<SortKey, (i: ItemSummary) => string | number> = {
   updated: time,
 }
 
-/** Items ordered by a column; ties fall back to newest first. Does not mutate. */
+/** Items ordered by a column, pinned ones first; ties fall back to newest first. Does not mutate. */
 export function sortItems(items: ItemSummary[], key: SortKey, dir: SortDir): ItemSummary[] {
   const get = KEYS[key]
   const sign = dir === "asc" ? 1 : -1
   return [...items].sort((a, b) => {
+    if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1
     const x = get(a), y = get(b)
     const c = typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y))
     return c * sign || time(b).localeCompare(time(a))
   })
 }
+
+const HOVER = "relative z-10 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
 
 type Col = { key: SortKey; label: string; first: SortDir; className?: string; num?: boolean }
 
@@ -50,6 +56,7 @@ export function ItemTable({
   empty = "Nothing here yet",
   cap = 100,
   now = Date.now(),
+  onChanged,
 }: {
   items: ItemSummary[]
   /** Project name before the branch (Home); a project page shows the branch alone. */
@@ -58,7 +65,12 @@ export function ItemTable({
   /** Rows shown before a "Show all" button. */
   cap?: number
   now?: number
+  /** Called after a row is renamed, pinned or archived, to reload the list. */
+  onChanged?: () => void
 }) {
+  const [editing, setEditing] = useState<string | null>(null)
+  const mark = (i: ItemSummary, patch: { pinned?: boolean; archived?: boolean }) =>
+    postMark(i.source, i.id, patch).then(() => onChanged?.(), () => {})
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: "updated", dir: "desc" })
   const [all, setAll] = useState(false)
   const rows = useMemo(() => sortItems(items, sort.key, sort.dir), [items, sort])
@@ -112,12 +124,44 @@ export function ItemTable({
             const folder = i.project ? worktreeLabel({ path: i.project.worktree, branch: null }) : ""
             const branch = i.branch || (showProject && folder === i.project?.name ? "" : folder)
             return (
-              <tr key={`${i.source}/${i.id}`} className="group relative cursor-pointer border-b border-border/60 hover:bg-surface/60">
-                <td className="h-9 truncate px-2">
-                  {/* The row is clickable through its title link (::after covers the row). */}
-                  <a href={href} title={i.title || i.id} className="font-medium text-foreground/90 after:absolute after:inset-0 after:content-[''] group-hover:text-foreground">
-                    {i.title || i.id}
-                  </a>
+              <tr key={`${i.source}/${i.id}`} className={cn("group relative cursor-pointer border-b border-border/60 hover:bg-surface/60", i.open === false && "opacity-60")}>
+                <td className="h-9 px-2">
+                  {editing === `${i.source}/${i.id}` ? (
+                    <div className="relative z-10">
+                      <RenameForm
+                        compact
+                        source={i.source}
+                        id={i.id}
+                        title={i.title}
+                        renamed={i.originalTitle !== undefined}
+                        onDone={() => { setEditing(null); onChanged?.() }}
+                        onCancel={() => setEditing(null)}
+                      />
+                    </div>
+                  ) : (
+                    <div className="flex min-w-0 items-center gap-1">
+                      {/* The row is clickable through its title link (::after covers the row). */}
+                      <a href={href} title={i.originalTitle ?? i.title ?? i.id} className="truncate font-medium text-foreground/90 after:absolute after:inset-0 after:content-[''] group-hover:text-foreground">
+                        {i.title || i.id}
+                      </a>
+                      <IconAction label="Rename" className={HOVER} onClick={() => setEditing(`${i.source}/${i.id}`)}>
+                        <Pencil />
+                      </IconAction>
+                      {i.resume && (
+                        <CopyResume command={i.resume} open={i.open} className={HOVER} />
+                      )}
+                      <IconAction label={i.pinned ? "Unpin" : "Pin to the top"} className={i.pinned ? "relative z-10 text-foreground" : HOVER} onClick={() => mark(i, { pinned: !i.pinned })}>
+                        {i.pinned ? <PinOff /> : <Pin />}
+                      </IconAction>
+                      <IconAction
+                        label={i.archived ? (i.open ? "Unarchive (archived; hidden once it closes)" : "Unarchive") : i.open ? "Archive (hidden once it closes)" : "Archive"}
+                        className={i.archived && i.open ? "relative z-10 text-foreground" : HOVER}
+                        onClick={() => mark(i, { archived: !i.archived })}
+                      >
+                        {i.archived ? <ArchiveRestore /> : <Archive />}
+                      </IconAction>
+                    </div>
+                  )}
                 </td>
                 <td className="px-2 py-1 font-mono text-xs leading-tight text-muted-foreground" title={[i.project?.name, branch].filter(Boolean).join(" · ")}>
                   {showProject && i.project && <div className="truncate text-foreground/80">{i.project.name}</div>}
@@ -125,10 +169,14 @@ export function ItemTable({
                 </td>
                 <td className="truncate px-2 font-mono text-xs text-muted-foreground">{i.harness}</td>
                 <td className="px-2 whitespace-nowrap">
-                  <span className={cn("inline-flex items-center gap-1.5", STATUS_TEXT[i.status])}>
-                    <StatusDot status={i.status} live={i.live} labelled className="size-1.5" />
-                    {STATUS_LABEL[i.status]}
-                  </span>
+                  {i.open === false ? (
+                    <span className="font-mono text-xs text-faint" title="No Claude Code process is running this session">closed</span>
+                  ) : (
+                    <span className={cn("inline-flex items-center gap-1.5", STATUS_TEXT[i.status])}>
+                      <StatusDot status={i.status} live={i.live} labelled className="size-1.5" />
+                      {STATUS_LABEL[i.status]}
+                    </span>
+                  )}
                 </td>
                 <td className="px-2 text-right font-mono tabular-nums text-muted-foreground">{i.counts.lanes}</td>
                 <td className="px-2 text-right font-mono whitespace-nowrap tabular-nums text-muted-foreground">

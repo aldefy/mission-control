@@ -7,8 +7,11 @@ jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
+      # One Node version failing must not cancel the others: each answers a different question.
+      fail-fast: false
       matrix:
-        node: ["20.19", "22"]
+        # 20.19 is the oldest Node the dashboard runs on ("engines": ">=20"); 22 and 24 are the current LTS lines.
+        node: ["20.19", "22", "24"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -17,4 +20,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - run: npm test
+      - run: npm run typecheck
+      - run: npm run test:server
+      # The page's tests need vitest 5, which needs Node 22.12+. They are dev-only: what runs on Node 20
+      # is the server and the built page, and both are covered above.
+      - if: ${{ matrix.node != '20.19' }}
+        run: npm run test:web

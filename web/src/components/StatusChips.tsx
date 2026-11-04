@@ -14,11 +14,15 @@ const CHIPS: Chip[] = [
   { filter: "working", label: "Working", dot: "working", tone: "bg-running/10 text-running", ring: "ring-running/70" },
   { filter: "stopped", label: "Stopped", dot: "stopped", tone: "bg-secondary text-secondary-foreground/80", ring: "ring-stopped/70" },
   { filter: "done", label: "Done today", dot: "done", tone: "bg-secondary text-muted-foreground", ring: "ring-muted-foreground/60" },
+  { filter: "closed", label: "Closed", dot: "idle", tone: "bg-secondary text-muted-foreground", ring: "ring-muted-foreground/60" },
 ]
 
 /** The counts each chip shows: overview counts, plus done-today from the project tree. */
 export function chipCounts(o: Overview | null, doneToday: number): Record<ChipFilter, number | null> {
-  return { waiting: o?.counts.waiting ?? null, looping: o ? (o.counts.looping ?? 0) : null, ready: o ? (o.counts.ready ?? 0) : null, working: o?.counts.working ?? null, stopped: o?.counts.stopped ?? null, done: doneToday }
+  return {
+    waiting: o?.counts.waiting ?? null, looping: o ? (o.counts.looping ?? 0) : null, ready: o ? (o.counts.ready ?? 0) : null,
+    working: o?.counts.working ?? null, stopped: o?.counts.stopped ?? null, done: doneToday, closed: o ? (o.counts.closed ?? 0) : null,
+  }
 }
 
 /** Top-bar status chips (directions.html B). Clicking one filters the sidebar and views; clicking it again clears. */

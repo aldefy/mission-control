@@ -1,4 +1,8 @@
 import { useEffect, useMemo, useState } from "react"
+import { Pencil } from "lucide-react"
+import { RenameForm } from "@/components/RenameForm"
+import { CopyResume } from "@/components/CopyResume"
+import { IconAction } from "@/components/IconAction"
 import { Retry } from "@/components/Retry"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -27,7 +31,7 @@ import { useCalls, useCapabilities, useExtra, useItem, useSources, type ItemDeta
 import { useItemConfig, useItemConflicts } from "@/lib/api-v22"
 import { SameFileWarnings } from "@/components/SameFileWarnings"
 import { extraTabs, normaliseDiff, normaliseTasks, qaRows, runChanges } from "@/lib/extras"
-import { useNow } from "@/lib/format"
+import { ago, useNow } from "@/lib/format"
 import { crewCards, crewGraph, currentStop } from "@/lib/graph"
 import { laneExtras } from "@/lib/item"
 import { laneLinks } from "@/lib/map"
@@ -52,15 +56,39 @@ const Count = ({ n }: { n: number | null | undefined }) => (n ? <span className=
 const TaskCount = ({ id, refresh }: { id: string; refresh: number }) => <Count n={normaliseTasks(useExtra<unknown>("tasks", id, undefined, refresh).data).length} />
 const DiffCount = ({ id, refresh }: { id: string; refresh: number }) => <Count n={normaliseDiff(useExtra<unknown>("diff", id, undefined, refresh).data).files.length} />
 
-function Header({ d }: { d: ItemDetail }) {
+function Title({ s, onRenamed }: { s: ItemDetail["summary"]; onRenamed: () => void }) {
+  const [editing, setEditing] = useState(false)
+  if (editing) {
+    return (
+      <RenameForm
+        source={s.source}
+        id={s.id}
+        title={s.title}
+        renamed={s.originalTitle !== undefined}
+        onDone={() => { setEditing(false); onRenamed() }}
+        onCancel={() => setEditing(false)}
+      />
+    )
+  }
+  return (
+    <div className="flex min-w-0 flex-1 items-center gap-1">
+      <h1 className="line-clamp-2 min-w-0 text-lg font-bold tracking-tight [text-wrap:balance]" title={s.originalTitle ?? s.title}>
+        {s.title || s.id}
+      </h1>
+      <IconAction label="Rename" onClick={() => setEditing(true)}>
+        <Pencil />
+      </IconAction>
+    </div>
+  )
+}
+
+function Header({ d, onRenamed }: { d: ItemDetail; onRenamed: () => void }) {
   const s = d.summary
   // One status word in its own colour; "live" is a separate neutral tag, never mixed into the status pill.
   const shown = s.live && s.status !== "waiting" && s.status !== "looping" && s.status !== "idle" && s.status !== "failed" ? "working" : s.status
   return (
     <header className="flex flex-wrap items-center gap-x-3 gap-y-1">
-      <h1 className="line-clamp-2 min-w-0 flex-1 text-lg font-bold tracking-tight [text-wrap:balance]" title={s.title}>
-        {s.title || s.id}
-      </h1>
+      <Title s={s} onRenamed={onRenamed} />
       <span className="font-mono text-xs text-faint">
         {s.harness} · {s.kind}
         {s.branch ? ` · ${s.branch}` : ""}
@@ -72,6 +100,19 @@ function Header({ d }: { d: ItemDetail }) {
       {s.live && s.status !== "idle" && (
         <span data-live-tag className="mc-live rounded-full border border-border px-2 py-0.5 font-mono text-xs text-faint">live</span>
       )}
+      {s.parkedInto && (
+        <p className="basis-full text-xs text-muted-foreground">
+          The chat continues under a new session id; this is its earlier part. Lists show it once, under the new id.{" "}
+          <a className="underline hover:text-foreground" href={toHash({ view: "item", source: s.source, id: s.parkedInto, tab: "chat" })}>Open the latest part</a>
+        </p>
+      )}
+      {s.continuedFrom && (
+        <p className="basis-full text-xs text-muted-foreground">
+          Same chat, new session id: Claude Code switched ids partway through. The earlier messages are under the old id.{" "}
+          <a className="underline hover:text-foreground" href={toHash({ view: "item", source: s.source, id: s.continuedFrom, tab: "chat" })}>Open the earlier part</a>
+        </p>
+      )}
+      {s.resume && <CopyResume full command={s.resume} open={s.open} className="basis-full" />}
     </header>
   )
 }
@@ -133,7 +174,13 @@ export default function Item({ source, id, tab, call }: { source: string; id: st
 
   return (
     <div className="mx-auto flex max-w-[1500px] flex-col gap-4">
-      <Header d={d} />
+      <Header d={d} onRenamed={item.reload} />
+      {d.summary.recap && (
+        <section aria-label="Recap" className="rounded-lg border bg-card px-3 py-2 text-sm">
+          <span className="mr-2 font-mono text-xs text-faint">recap{d.summary.recap.ts ? ` · ${ago(d.summary.recap.ts, now)} ago` : ""}</span>
+          {d.summary.recap.text}
+        </section>
+      )}
       <SummaryStrip detail={d} now={now} />
       {!desktop && <RightRail part="ask" detail={d} calls={null} actions={actions} now={now} onActed={item.reload} flash={youFlash} />}
       <div className={cn("grid gap-6", !wide && "lg:grid-cols-[minmax(0,1fr)_320px]")}>

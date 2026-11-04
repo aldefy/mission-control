@@ -4,7 +4,7 @@ import { appendFileSync, mkdtempSync, mkdirSync, statSync, symlinkSync, writeFil
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import create from "../src/sources/claude-code/index.mjs"
+import create, { comparableStart, processStart } from "../src/sources/claude-code/index.mjs"
 import { PRICES, costOf, family, version } from "../src/sources/claude-code/prices.mjs"
 import { parseTranscript } from "../src/sources/claude-code/parse.mjs"
 import { createCache } from "../src/sources/claude-code/cache.mjs"
@@ -174,6 +174,83 @@ test("robustness: missing root, empty and garbage files never throw", async () =
   assert.deepEqual([item.lanes.length, item.summary.counts.calls], [1, 0])
 })
 
+test("a /rename, else Claude Code's generated title, past the 64 KB head titles the session", async () => {
+  const r = mkdtempSync(join(tmpdir(), "mc-cc-"))
+  mkdirSync(join(r, "-p"))
+  const user = (text) => JSON.stringify({ type: "user", cwd: "/work", timestamp: "2026-01-01T00:00:00Z", message: { role: "user", content: text } })
+  const rename = (t) => JSON.stringify({ type: "custom-title", customTitle: t, sessionId: "s" })
+  const filler = Array.from({ length: 100 }, () => user("x".repeat(1000)))
+  const ai = (t) => JSON.stringify({ type: "ai-title", aiTitle: t })
+  writeFileSync(join(r, "-p", "s.jsonl"), [user("a long first prompt"), rename("old"), ...filler, rename("day0paywall"), ai("Paywall work"), user("more")].join("\n") + "\n")
+  writeFileSync(join(r, "-p", "g.jsonl"), [user("a long first prompt"), ...filler, ai("Generated title")].join("\n") + "\n")
+  const s = create({ root: r })
+  const titles = Object.fromEntries((await s.listItems()).map((i) => [i.id, i.title]))
+  assert.deepEqual(titles, { s: "day0paywall", g: "Generated title" }) // /rename beats Claude Code's own title
+  assert.equal((await s.getItem("s")).summary.title, "day0paywall")
+  assert.equal((await s.getItem("g")).summary.title, "Generated title")
+})
+
+test("open state from <config>/sessions/<pid>.json: busy is working, a dead pid or no file is closed", async () => {
+  const cfg = mkdtempSync(join(tmpdir(), "mc-cc-"))
+  const r = join(cfg, "projects")
+  mkdirSync(join(r, "-p"), { recursive: true })
+  mkdirSync(join(cfg, "sessions"))
+  for (const id of ["busy", "idle", "dead", "none", "parked"]) writeFileSync(join(r, "-p", `${id}.jsonl`), JSON.stringify({ type: "user", cwd: "/w", message: { role: "user", content: id } }) + "\n")
+  const reg = (pid, sessionId, status, kind, extra = {}) => writeFileSync(join(cfg, "sessions", `${pid}.json`), JSON.stringify({ pid, sessionId, status, kind, ...extra }))
+  reg(process.pid, "busy", "busy", "bg", { jobId: "job1" })
+  reg(1, "parked", "busy", "interactive", { parkedJobId: "job1" }) // pid 1 always exists
+  reg(process.ppid, "idle", "idle")
+  reg(2 ** 22 + 7, "dead", "busy") // above macOS and Linux pid limits: never a running process
+  const s = create({ root: r })
+  const got = Object.fromEntries((await s.listItems()).map((i) => [i.id, [i.open, i.status]]))
+  assert.deepEqual(got, { busy: [true, "working"], idle: [true, "idle"], dead: [false, "idle"], none: [false, "idle"], parked: [true, "idle"] })
+  assert.deepEqual([(await s.getItem("busy")).summary.open, (await s.getItem("dead")).summary.open], [true, false])
+  const ready = Object.fromEntries((await s.listItems()).map((i) => [i.id, !!i.ready]))
+  assert.deepEqual(ready, { busy: false, idle: true, dead: false, none: false, parked: false }) // open and not busy is Ready at once
+  assert.equal((await s.getItem("parked")).summary.parkedInto, "busy")
+  assert.equal((await s.getItem("busy")).summary.resume, `cd /w && CLAUDE_CONFIG_DIR=${cfg} claude --resume busy`)
+})
+
+test("a last turn stopped with an interrupt is flagged; a later reply clears it", async () => {
+  const r = mkdtempSync(join(tmpdir(), "mc-cc-"))
+  mkdirSync(join(r, "-p"))
+  const user = (text) => JSON.stringify({ type: "user", cwd: "/w", message: { role: "user", content: [{ type: "text", text }] } })
+  const reply = JSON.stringify({ type: "assistant", message: { id: "m1", role: "assistant", content: [{ type: "text", text: "ok" }] } })
+  writeFileSync(join(r, "-p", "stopped.jsonl"), [user("go"), reply, user("[Request interrupted by user for tool use]"), JSON.stringify({ type: "last-prompt" })].join("\n") + "\n")
+  writeFileSync(join(r, "-p", "done.jsonl"), [user("go"), user("[Request interrupted by user]"), user("again"), reply].join("\n") + "\n")
+  const got = Object.fromEntries((await create({ root: r }).listItems()).map((i) => [i.id, !!i.interrupted]))
+  assert.deepEqual(got, { stopped: true, done: false })
+})
+
+test("parseTranscript: the newest away_summary is the recap, without the /config hint", () => {
+  const recap = (t, ts) => JSON.stringify({ type: "system", subtype: "away_summary", content: `${t} (disable recaps in /config)`, timestamp: ts })
+  const p = parseTranscript([recap("old", "2026-11-01T00:00:00Z"), recap("Tests pass; next, commit.", "2026-11-02T00:00:00Z")].join("\n"))
+  assert.deepEqual(p.meta.recap, { text: "Tests pass; next, commit.", ts: "2026-11-02T00:00:00Z" })
+})
+
+test("a live pid that started at another time than its sessions file says is a reused pid: closed", async () => {
+  const cfg = mkdtempSync(join(tmpdir(), "mc-cc-"))
+  const r = join(cfg, "projects")
+  mkdirSync(join(r, "-p"), { recursive: true })
+  mkdirSync(join(cfg, "sessions"))
+  for (const id of ["same", "reused"]) writeFileSync(join(r, "-p", `${id}.jsonl`), JSON.stringify({ type: "user", cwd: "/w", message: { role: "user", content: id } }) + "\n")
+  writeFileSync(join(cfg, "sessions", `${process.pid}.json`), JSON.stringify({ pid: process.pid, sessionId: "same", status: "idle", procStart: "Tue Nov  3 06:39:58 2026" }))
+  writeFileSync(join(cfg, "sessions", "1.json"), JSON.stringify({ pid: 1, sessionId: "reused", status: "idle", procStart: "Mon Oct  5 09:00:00 2026" }))
+  const startOf = (pid) => (pid === process.pid ? "Tue Nov 3 06:39:58 2026" : "Sat Oct 31 08:00:00 2026")
+  const got = Object.fromEntries((await create({ root: r, startOf }).listItems()).map((i) => [i.id, i.open]))
+  assert.deepEqual(got, { same: true, reused: false })
+})
+
+test("processStart: ps lstart in UTC, whitespace folded; null when ps fails or is missing; cached per pid", () => {
+  const calls = []
+  const spawn = (cmd, args, opts) => (calls.push([cmd, args.join(" "), opts.env.TZ]), { status: 0, stdout: "Tue Nov  3 06:39:58 2026\n" })
+  assert.equal(processStart(91001, { spawn }), "Tue Nov 3 06:39:58 2026")
+  assert.equal(processStart(91001, { spawn }), "Tue Nov 3 06:39:58 2026")
+  assert.deepEqual(calls, [["ps", "-o lstart= -p 91001", "UTC"]]) // the second answer came from the cache
+  assert.equal(processStart(91002, { spawn: () => ({ status: 1, stdout: "" }) }), null)
+  assert.equal(processStart(91003, { spawn: () => { throw new Error("no ps") } }), null)
+})
+
 test("parseTranscript: half-written last line is skipped", () => {
   const p = parseTranscript('{"type":"user","timestamp":"2026-11-02T09:00:00Z","message":{"content":"hi"}}\n{"type":"assistant","message":{"id":"x","content":[{"type":"tool_u')
   assert.deepEqual([p.calls.length, p.meta.title], [0, "hi"])
@@ -322,4 +399,20 @@ test("v2.2: a subagent file that fails to read once is retried on the next call,
   } finally { chmodSync(b.sub(0), 0o644) }
   // Same size and mtime as before (chmod changes neither): the lane must still appear now.
   assert.equal((await s.getItem("big")).lanes.length, 2)
+})
+
+test("a chat parked on a job whose process has exited stays listed; procStart is compared only in lstart form", async () => {
+  const cfg = mkdtempSync(join(tmpdir(), "mc-cc-"))
+  const r = join(cfg, "projects")
+  mkdirSync(join(r, "-p"), { recursive: true })
+  mkdirSync(join(cfg, "sessions"))
+  for (const id of ["parked", "linux"]) writeFileSync(join(r, "-p", `${id}.jsonl`), JSON.stringify({ type: "user", cwd: "/w", message: { role: "user", content: id } }) + "\n")
+  writeFileSync(join(cfg, "sessions", "1.json"), JSON.stringify({ pid: 1, sessionId: "parked", status: "idle", parkedJobId: "gone-job" }))
+  writeFileSync(join(cfg, "sessions", `${process.pid}.json`), JSON.stringify({ pid: process.pid, sessionId: "linux", status: "idle", procStart: "1730619905", pidDomain: "linux" }))
+  const s = create({ root: r, startOf: () => "Sat Oct 31 08:00:00 2026" })
+  const got = Object.fromEntries((await s.listItems()).map((i) => [i.id, [i.open, i.parkedInto ?? null]]))
+  assert.deepEqual(got, { parked: [true, null], linux: [true, null] })
+  assert.equal(comparableStart({ procStart: "Tue Nov  3 16:45:05 2026" }), true)
+  assert.equal(comparableStart({ procStart: "Tue Nov  3 16:45:05 2026", pidDomain: "linux" }), false)
+  assert.equal(comparableStart({ procStart: "2026-11-03T16:45:05Z" }), false)
 })

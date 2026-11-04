@@ -182,6 +182,8 @@ export type ItemSummary = {
   id: string
   kind: "run" | "session"
   title: string
+  /** The source's own title, present when the owner renamed the item on the page. */
+  originalTitle?: string
   harness: string
   cwd: string | null
   branch: string | null
@@ -204,6 +206,20 @@ export type ItemSummary = {
   readySince?: string
   sinceChange?: SinceChange
   loop?: LoopInfo
+  /** A process is still running this session (false: closed). Absent when the source cannot tell. */
+  open?: boolean
+  /** The chat continues under this newer session id; this one is its earlier part (not listed). */
+  parkedInto?: string
+  /** The earlier session id of the same chat. */
+  continuedFrom?: string
+  /** Claude Code's latest recap of the session (written when you come back to it), item detail only. */
+  recap?: { text: string; ts: string | null }
+  /** Shell command that resumes the session in its folder (Claude Code only). */
+  resume?: string
+  /** Pinned by the owner: listed first. */
+  pinned?: boolean
+  /** Archived by the owner (and not open): left out of lists and counts unless asked for. */
+  archived?: boolean
 }
 export type Placed = { key: string; name: string; worktree: string }
 export type Lane = {
@@ -266,7 +282,7 @@ export type ReadyItem = Where & { since: string | null }
 /** An item looping now, with its looping lane's loop. */
 export type LoopingItem = Where & { lane: string; loop: LoopInfo; sinceChange: SinceChange | null }
 export type Overview = {
-  counts: { waiting: number; working: number; stopped: number; done: number; ready?: number; looping?: number }
+  counts: { waiting: number; working: number; stopped: number; done: number; ready?: number; looping?: number; closed?: number }
   needsYou: NeedsYou[]
   ready?: ReadyItem[]
   looping?: LoopingItem[]
@@ -274,7 +290,8 @@ export type Overview = {
   /** Items left out because their project is hidden. */
   hidden: number
 }
-export type StatusCounts = Record<Status, number> & { items: number; live: number; ready?: number }
+/** `closed` items are also counted in their status (idle). */
+export type StatusCounts = Record<Status, number> & { items: number; live: number; ready?: number; closed?: number }
 /** A worktree as the sidebar sees it (`/api/projects?slim=1`): counts, no item list. */
 export type WorktreeSummary = {
   path: string
@@ -332,8 +349,8 @@ const PROJECTS_POLL = 5000
 export const overviewUrl = (all = false) => `/api/overview${all ? "?all=1" : ""}`
 export const projectsUrl = (tz: string) => `/api/projects${qs({ slim: "1", tz })}`
 export const projectUrl = (key: string, tz: string) => `/api/project/${encodeURIComponent(key)}${qs({ tz })}`
-export const itemsUrl = (q: { all?: boolean; limit?: number; source?: string; id?: string } = {}) =>
-  `/api/items${qs({ all: q.all ? "1" : undefined, limit: q.limit === undefined ? undefined : String(q.limit), source: q.source, id: q.id })}`
+export const itemsUrl = (q: { all?: boolean; archived?: boolean; limit?: number; source?: string; id?: string } = {}) =>
+  `/api/items${qs({ all: q.all ? "1" : undefined, archived: q.archived ? "1" : undefined, limit: q.limit === undefined ? undefined : String(q.limit), source: q.source, id: q.id })}`
 
 export const useOverview = (all = false) => useFetch<Overview>(overviewUrl(all), POLL)
 export const useSources = () => useFetch<SourceInfo[]>("/api/sources")
@@ -382,6 +399,55 @@ export async function postItemAction(source: string, id: string, name: string, b
   const j = await r.json().catch(() => ({}))
   if (!r.ok) throw new Error(j.error ?? j.message ?? `action ${name}: ${r.status}`)
   return j
+}
+
+/** Rename an item on the page; an empty title restores the source's own. */
+export async function postTitle(source: string, id: string, title: string) {
+  const r = await fetch(`${itemUrl(source, id)}/title`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ title }),
+  })
+  const j = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(j.error ?? `rename: ${r.status}`)
+  return j as { title: string | null }
+}
+
+export type Settings = {
+  notify: boolean
+  notifyDone?: boolean
+  /** Seconds a page notification stays before closing itself; 0 keeps it until dismissed. */
+  notifyDismiss?: number
+  autostart?: { supported: boolean; enabled: boolean; managed?: boolean; label?: string; reason?: string | null }
+  /** Claude Code's cleanupPeriodDays for the config this dashboard reads; null without Claude Code. */
+  retention?: { configDir: string; days: number | null; isDefault: boolean; error?: string } | null
+  restarting?: boolean
+}
+export const useSettings = () => useFetch<Settings>("/api/settings")
+export async function postSettings(patch: { notify?: boolean; notifyDone?: boolean; notifyDismiss?: number; autostart?: boolean; retentionDays?: number }) {
+  const r = await fetch("/api/settings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) })
+  const j = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(j.error ?? `settings: ${r.status}`)
+  return j as Settings
+}
+
+export async function postTestNotification() {
+  const r = await fetch("/api/settings/test", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })
+  const j = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(j.error ?? `test: ${r.status}`)
+  return j as { via: string }
+}
+
+/** Pin or archive an item (either flag may be left out). */
+export async function postMark(source: string, id: string, patch: { pinned?: boolean; archived?: boolean }) {
+  const r = await fetch(`${itemUrl(source, id)}/mark`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(patch),
+  })
+  const j = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(j.error ?? `mark: ${r.status}`)
+  return j as { pinned: boolean; archived: boolean }
 }
 
 export type ActionNote = { ok: boolean; text: string }

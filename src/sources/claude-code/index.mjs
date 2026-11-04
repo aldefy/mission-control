@@ -1,5 +1,7 @@
+import { spawnSync } from "node:child_process"
 import { closeSync, openSync, readSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs"
-import { join, sep } from "node:path"
+import { homedir } from "node:os"
+import { dirname, join, sep } from "node:path"
 import { UNCONFIRMED_MS, askOf, createWaitingReader, readyOf } from "../../hooks.mjs"
 import { capText, isSessionName } from "../../names.mjs"
 import { createCache } from "./cache.mjs"
@@ -15,6 +17,7 @@ const TAIL_BYTES = 64 * 1024
 const WAIT_EXPIRY_MS = 12 * 3600 * 1000
 const CLEAR_GAP_MS = 2000
 const HEAD_BYTES = 64 * 1024
+const TITLE_TAIL = 256 * 1024 // Claude Code re-appends its /rename and generated-title lines every few turns, so the newest sit near the end
 const HEAD_MAX = 1024 * 1024 // read forward this far for the first line carrying a cwd
 const SESSIONS = 256 // parsed sessions kept, whatever their lane count
 const SESSION_TEXT = 200_000 // getSession returns at most this many bytes
@@ -22,6 +25,32 @@ const SAFE = /^[\w-][\w.-]*$/ // one path segment: no separators, never starts w
 const zero = () => ({ in: 0, out: 0, cacheRead: 0, cacheWrite: 0 })
 const add = (a, b) => { a.in += b.in; a.out += b.out; a.cacheRead += b.cacheRead; a.cacheWrite += b.cacheWrite }
 const iso = (ms) => new Date(ms).toISOString()
+const shq = (s) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`)
+
+/**
+ * Whether a sessions file's procStart can be compared with `ps -o lstart=`: the lstart text Claude Code writes on
+ * macOS ("Tue Nov  3 16:45:05 2026"). Another format (or another pidDomain) is not compared, so a live pid stays open.
+ */
+export const comparableStart = (j) =>
+  typeof j?.procStart === "string" && /^\w{3} \w{3} +\d{1,2} \d\d:\d\d:\d\d \d{4}$/.test(j.procStart.trim()) && (j.pidDomain ?? "darwin") === "darwin"
+
+const startCache = new Map() // pid -> { at, value }: `ps` once a minute per pid at most
+/**
+ * When a process started, as `ps -o lstart=` prints it in UTC (Claude Code's procStart is UTC), whitespace
+ * folded; null when `ps` cannot say (no such pid, no `ps`), so the caller keeps the plain pid check.
+ */
+export function processStart(pid, { spawn = spawnSync } = {}) {
+  const hit = startCache.get(pid)
+  if (hit && Date.now() - hit.at < 60_000) return hit.value
+  let value = null
+  try {
+    const r = spawn("ps", ["-o", "lstart=", "-p", String(pid)], { encoding: "utf8", timeout: 2000, env: { ...process.env, TZ: "UTC" } })
+    value = r.status === 0 ? r.stdout.replace(/\s+/g, " ").trim() || null : null
+  } catch { value = null }
+  if (startCache.size > 512) startCache.clear() // pids come and go over a long uptime; a refill costs one `ps` each
+  startCache.set(pid, { at: Date.now(), value })
+  return value
+}
 
 /**
  * Claude Code sessions as a v2 source. `root` is the projects dir (default ~/.claude/projects),
@@ -29,9 +58,9 @@ const iso = (ms) => new Date(ms).toISOString()
  * unanswered is "waiting" (an idle reminder is "ready", i.e. idle). Read-only; every file read is confined to the real path of `root`. `cachePath` is where the
  * usage scan persists its per-file results (omitted: memory only); `parse` (text -> parseTranscript result,
  * usage scan only) and `onParse(path, { bytes, full })` (every transcript read for items, calls and turns)
- * are for tests.
+ * are for tests, and so is `startOf` (pid -> its start time, null when unknown).
  */
-export function create({ root, now = () => Date.now(), hooksDir, cachePath, parse = parseTranscript, onParse, loops = () => LOOP_DEFAULTS } = {}) {
+export function create({ root, now = () => Date.now(), hooksDir, cachePath, parse = parseTranscript, startOf = processStart, onParse, loops = () => LOOP_DEFAULTS } = {}) {
   const cache = createCache() // key helper for the head cache below
   // id -> { stamp, tails, data }: one parse per session version (stamp = identity of all its files), shared by
   // getItem, getCalls and the overview. tails keeps each file's incremental reader, so a growing
@@ -41,6 +70,8 @@ export function create({ root, now = () => Date.now(), hooksDir, cachePath, pars
   const readWaiting = createWaitingReader() // hook logs, cached by size+mtime, tail-read when large
   const lastTurns = createCache(4096) // path|size|mtime -> newest turn time in the tail of a main log
   const peeked = createCache(8192) // path|size|mtime -> peek of the head, so warm lists skip file reads
+  const tailTitles = createCache(8192) // path|size|mtime -> title from the tail: /rename, else generated (or null)
+  const interrupts = createCache(8192) // path|size|mtime -> whether the last turn ended with an interrupt
   const opened = new Map() // id -> { lastMs, summary } of sessions already fully parsed, for list totals
   let liveFiles = [] // main logs of sessions live or waiting at the last listing, for /api/events
   let realRoot = null
@@ -176,6 +207,129 @@ export function create({ root, now = () => Date.now(), hooksDir, cachePath, pars
     } catch { return 0 } finally { if (fd !== undefined) closeSync(fd) }
   }
 
+  /** True when the newest user or assistant record in the tail is Claude Code's "[Request interrupted by user…]". */
+  function endedByInterrupt(file, size) {
+    let fd
+    try {
+      fd = openSync(file, "r")
+      const n = Math.min(size, TAIL_BYTES)
+      const buf = Buffer.alloc(n)
+      readSync(fd, buf, 0, n, size - n)
+      const lines = buf.toString("utf8").split("\n")
+      for (let i = lines.length - 1; i >= 0; i--) {
+        if (!lines[i].includes('"type":"user"') && !lines[i].includes('"type":"assistant"')) continue
+        try {
+          const j = JSON.parse(lines[i])
+          if (j?.type !== "user" && j?.type !== "assistant") continue
+          if (j.type === "assistant") return false
+          const c = j.message?.content
+          const text = typeof c === "string" ? c : Array.isArray(c) ? c.find((b) => b?.type === "text")?.text : null
+          return typeof text === "string" && text.startsWith("[Request interrupted by user")
+        } catch { /* half-written or cut first line */ }
+      }
+      return false
+    } catch { return false } finally { if (fd !== undefined) closeSync(fd) }
+  }
+
+  /**
+   * The title from the tail of a main log: the newest /rename (custom-title line), else the newest title
+   * Claude Code generated (ai-title line); null when neither is there. Both are re-appended every few turns.
+   */
+  function tailTitle(file, size) {
+    let fd
+    try {
+      fd = openSync(file, "r")
+      const n = Math.min(size, TITLE_TAIL)
+      const buf = Buffer.alloc(n)
+      readSync(fd, buf, 0, n, size - n)
+      const lines = buf.toString("utf8").split("\n")
+      let ai = null
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const l = lines[i]
+        if (!l.includes('"custom-title"') && (ai || !l.includes('"ai-title"'))) continue
+        try {
+          const j = JSON.parse(l)
+          if (j?.type === "custom-title" && typeof j.customTitle === "string" && j.customTitle.trim()) return j.customTitle.trim()
+          if (j?.type === "ai-title" && typeof j.aiTitle === "string" && j.aiTitle.trim()) ai = j.aiTitle.trim()
+        } catch { /* half-written or cut first line */ }
+      }
+      return ai
+    } catch { return null } finally { if (fd !== undefined) closeSync(fd) }
+  }
+
+  // Lists, item pages and the change feed all ask within the same poll: read the pid files at most once a second.
+  let openMemo = { at: -Infinity, value: null }
+  function openSessions() {
+    if (Date.now() - openMemo.at < 1000) return openMemo.value
+    openMemo = { at: Date.now(), value: readOpenSessions() }
+    return openMemo.value
+  }
+  /**
+   * Running Claude Code processes by session id, from the <config dir>/sessions/<pid>.json files Claude Code
+   * keeps next to projects/ (status "busy" or "idle"). A file whose pid is gone is a closed session. null when
+   * there is no such dir (an older Claude Code, or a projects dir passed on its own): open state is unknown.
+   */
+  function readOpenSessions() {
+    const dir = join(dirname(root), "sessions")
+    let names
+    try { names = readdirSync(dir) } catch { return null }
+    const out = new Map()
+    const parked = [] // [sessionId, jobId]: the chat behind this session id continues under the job's session id
+    const jobs = new Map() // background jobId -> its sessionId
+    for (const n of names) {
+      if (!/^\d+\.json$/.test(n)) continue
+      try {
+        const j = JSON.parse(readFileSync(join(dir, n), "utf8"))
+        if (typeof j?.sessionId !== "string" || !Number.isInteger(j.pid) || j.pid <= 0) continue
+        try { process.kill(j.pid, 0) } catch (e) { if (e.code !== "EPERM") continue } // signal 0 only checks the pid exists
+        // A pid can be reused after a crash: a live pid that started at another time than the file says is not it.
+        const started = comparableStart(j) ? startOf(j.pid) : null
+        if (started && started !== j.procStart.replace(/\s+/g, " ").trim()) continue
+        const since = Number.isFinite(j.statusUpdatedAt) ? new Date(j.statusUpdatedAt).toISOString() : null
+        out.set(j.sessionId, { busy: j.status === "busy", since })
+        if (typeof j.jobId === "string") jobs.set(j.jobId, j.sessionId)
+        if (typeof j.parkedJobId === "string") parked.push([j.sessionId, j.parkedJobId])
+      } catch { /* half-written or unreadable: skip */ }
+    }
+    // Only a job whose session is still open counts: once the job's process exits, its jobId names no session,
+    // and pointing at it would hide this chat with nothing listed in its place.
+    for (const [id, job] of parked) {
+      const into = jobs.get(job)
+      if (!into || !out.has(into) || into === id) continue
+      out.get(id).parkedInto = into
+      out.get(into).continuedFrom = id
+    }
+    return out
+  }
+
+  /** The shell command that resumes a session in its own folder, under the config dir it was recorded in. */
+  function resumeOf(x) {
+    const cfg = dirname(root)
+    const env = cfg === join(homedir(), ".claude") ? "" : `CLAUDE_CONFIG_DIR=${shq(cfg)} `
+    return `${x.cwd ? `cd ${shq(x.cwd)} && ` : ""}${env}claude --resume ${x.id}`
+  }
+
+  /**
+   * `x` with `open` and status from the running process, which beats file times: an idle Claude Code still
+   * appends metadata every few minutes. Busy is working (or looping), open and not busy is idle and ready
+   * (unless the hooks say it waits on you), and a closed session is idle, never waiting and never ready.
+   */
+  function withProcess(x, procs) {
+    x = { ...x, resume: resumeOf(x) }
+    if (!procs) return x
+    const p = procs.get(x.id)
+    const { ready, readySince, ...rest } = x
+    if (!p) return { ...rest, open: false, live: false, status: "idle", waiting: false } // closed: never ready
+    const base = p.continuedFrom ? { ...rest, continuedFrom: p.continuedFrom } : rest // the earlier session id of the same chat
+    // Parked (parkedJobId): the chat went on under the job's session id, and this id's last status ("busy") stays
+    // frozen. The terminal is still attached; only the session id changed. Ready or not shows under the new id.
+    if (p.parkedInto) return { ...base, open: true, live: false, status: "idle", waiting: false, parkedInto: p.parkedInto }
+    if (x.status === "waiting") return { ...base, open: true }
+    if (p.busy) return { ...base, open: true, live: true, status: x.status === "looping" ? "looping" : "working" }
+    // Open and not busy: ready for your next prompt now, without waiting for the hooks' idle reminder.
+    return { ...base, open: true, live: false, status: "idle", ready: true, ...(p.since ?? readySince ? { readySince: p.since ?? readySince } : {}) }
+  }
+
   /**
    * Hook-derived state: { waiting, message } or { ready } or null. A Notification stays open until a clearing
    * hook arrives or the MAIN log gains a user/assistant record more than 2 s after it; it expires after 12 h.
@@ -301,6 +455,7 @@ export function create({ root, now = () => Date.now(), hooksDir, cachePath, pars
       ...readyOf(w),
     }
     if (mp.meta.version) summary.version = mp.meta.version
+    if (mp.meta.recap) summary.recap = mp.meta.recap
     opened.set(s.id, { lastMs, summary })
     return { summary, lanes, calls, events: [] }
   }
@@ -314,6 +469,7 @@ export function create({ root, now = () => Date.now(), hooksDir, cachePath, pars
       const items = []
       const watched = []
       const logged = new Set(hooksDir ? dirs(hooksDir).map((d) => d.name) : []) // one readdir instead of a miss per session
+      const procs = openSessions()
       for (const s of sessionFiles()) {
         try {
           const c = confined(s.file)
@@ -323,14 +479,18 @@ export function create({ root, now = () => Date.now(), hooksDir, cachePath, pars
           for (const f of subs) lastMs = Math.max(lastMs, confined(join(root, s.slug, s.id, "subagents", f.name))?.st.mtimeMs ?? 0)
           const pk = cache.key(c.real, c.st)
           const h = peeked.get(pk) ?? peeked.set(pk, peekFile(c, s.slug))
+          let rt = tailTitles.get(pk)
+          if (rt === undefined) rt = tailTitles.set(pk, tailTitle(c.real, c.st.size))
+          let stopped = interrupts.get(pk)
+          if (stopped === undefined) stopped = interrupts.set(pk, endedByInterrupt(c.real, c.st.size))
           const o = opened.get(s.id)
           const done = o && o.lastMs === lastMs ? o.summary : null
           const live = liveAt(lastMs)
           const w = waitingOf(s.id, c, logged)
           if (live || w?.waiting) watched.push(c.real)
-          items.push({
+          items.push(withProcess({
             source: "claude-code", id: s.id, kind: "session",
-            title: h.title ?? s.id, harness: "claude-code",
+            title: rt ?? h.title ?? s.id, harness: "claude-code",
             cwd: h.cwd, branch: h.branch,
             // Looping is known once the session was opened (the overview opens every busy one each poll).
             live: live && !w?.ready, status: w?.waiting ? "waiting" : w?.ready ? "idle" : live ? (o?.summary.status === "looping" ? "looping" : "working") : "idle", waiting: !!w?.waiting,
@@ -341,7 +501,8 @@ export function create({ root, now = () => Date.now(), hooksDir, cachePath, pars
             tokens: done?.tokens ?? zero(), cost: done?.cost ?? 0,
             ...readyOf(w),
             ...(done ? {} : { partial: true }), // totals appear once the session is opened
-          })
+            ...(stopped ? { interrupted: true } : {}), // the last turn was stopped by the user, not finished
+          }, procs))
         } catch { /* one unreadable file must not hide the rest */ }
       }
       liveFiles = watched
@@ -354,7 +515,7 @@ export function create({ root, now = () => Date.now(), hooksDir, cachePath, pars
     async getItem(id) {
       const s = locate(id)
       const r = s && load(s)
-      return r && { summary: r.summary, lanes: r.lanes, events: r.events }
+      return r && { summary: withProcess(r.summary, openSessions()), lanes: r.lanes, events: r.events }
     },
 
     async getCalls(id, { lane, kind, q } = {}) {

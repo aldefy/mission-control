@@ -3,10 +3,11 @@ import { PanelLeft, Search } from "lucide-react"
 import { useItems, useSources, type ItemSummary, type ProjectSummary } from "@/lib/api"
 import { useShared } from "@/lib/projects-context"
 import { toHash, type Route } from "@/lib/route"
-import { doneToday, worktreeLabel } from "@/lib/tree"
+import { doneToday, worktreeLabel, type ChipFilter } from "@/lib/tree"
 import { cn } from "@/lib/utils"
 import { workingLine } from "@/lib/status-ui"
 import { BP, useMedia } from "@/lib/media"
+import { useNeedsYouNotifications } from "@/lib/notify"
 import { FreshnessBadge } from "@/components/Freshness"
 import { ThemePicker } from "@/components/ThemePicker"
 import { useTheme } from "@/lib/use-theme"
@@ -33,6 +34,8 @@ function store(key: string, v: string) {
     localStorage.setItem(key, v)
   } catch {}
 }
+
+const LISTS = new Set<Route["view"]>(["home", "project", "worktree"])
 
 /** The footer note: the page writes nothing unless a source declares actions. */
 export const footerNote = (actions: string[] | undefined) =>
@@ -101,7 +104,7 @@ export function Shell({ route, children }: { route: Route; children: ReactNode }
   const theme = useTheme()
   const [sidebar, setSidebar] = useState(() => stored(SIDEBAR_KEY) !== "closed")
   const [palette, setPalette] = useState(false)
-  const { projects, visible: tree, hiddenCount, showHidden, setShowHidden, overview, filter, setFilter } = useShared()
+  const { projects, visible: tree, hiddenCount, showHidden, setShowHidden, overview, filter, setFilter, resetView } = useShared()
   const sources = useSources()
   const budgets = useBudgets(browserTz())
   // The item route's summary, placed in its project: for the crumbs and the sidebar selection.
@@ -109,6 +112,12 @@ export function Shell({ route, children }: { route: Route; children: ReactNode }
   const found = useItems(isItem ? { all: true, source: route.source, id: route.id } : {}, isItem, false)
   const item = isItem ? (found.data?.[0] ?? null) : null
 
+  // Only Home and project pages list items; from anywhere else a chip opens Home with that filter.
+  const pickChip = (f: ChipFilter | null) => {
+    setFilter(f)
+    if (f && !LISTS.has(route.view)) location.hash = toHash({ view: "home" })
+  }
+  useNeedsYouNotifications()
   useEffect(() => store(SIDEBAR_KEY, sidebar ? "open" : "closed"), [sidebar])
   // Below lg the sidebar is an overlay drawer, closed by default and on every navigation.
   const desktop = useMedia(BP.lg)
@@ -152,13 +161,13 @@ export function Shell({ route, children }: { route: Route; children: ReactNode }
         >
           <PanelLeft className="size-4" />
         </button>
-        <a href="#/" aria-label="mission control, home" className="mr-1 flex h-8 shrink-0 items-center gap-2 text-sm font-semibold tracking-tight whitespace-nowrap lg:mr-3">
+        <a href="#/" onClick={resetView} aria-label="mission control, home" className="mr-1 flex h-8 shrink-0 items-center gap-2 text-sm font-semibold tracking-tight whitespace-nowrap lg:mr-3">
           <span className="grid size-4 place-items-center rounded-full border-[1.5px] border-brand">
             <span className="size-1.5 rounded-full bg-brand" />
           </span>
           <span className="hidden sm:inline">mission control</span>
         </a>
-        <StatusChips counts={counts} active={filter} onPick={setFilter} />
+        <StatusChips counts={counts} active={filter} onPick={pickChip} />
         <div className="ml-auto flex shrink-0 items-center gap-2">
           <RemoteChip />
           <BudgetChip budgets={budgets.data?.budgets} />

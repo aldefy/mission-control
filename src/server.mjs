@@ -1,5 +1,5 @@
 import { createServer as createHttpServer } from "node:http"
-import { existsSync } from "node:fs"
+import { appendFileSync, existsSync, mkdirSync, renameSync, statSync } from "node:fs"
 import { readFile, realpath } from "node:fs/promises"
 import { dirname, extname, join, resolve, sep } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -17,6 +17,11 @@ import { apiV22 } from "./api-v22.mjs"
 import { createBudgets } from "./budgets.mjs"
 import { createWindowConfig } from "./forecast.mjs"
 import { createRemoteControl, staticStatus } from "./remote/server.mjs"
+import { createTitles } from "./titles.mjs"
+import { createMarks } from "./marks.mjs"
+import { createSettings } from "./settings.mjs"
+import { createDispatcher, macNotify, startNotifier } from "./notify.mjs"
+import { createRetention } from "./retention.mjs"
 
 const DEFAULT_DIST = join(dirname(fileURLToPath(import.meta.url)), "..", "dist")
 
@@ -135,7 +140,7 @@ async function placeFirst(items, git, hideList, keep, limit = Infinity) {
 }
 
 async function apiV2(ctx, req, res, url, parts) {
-  const { registry, git, hide, now } = ctx
+  const { registry, git, hide, titles, marks, settings, autostart, onRestart, testNotify, pageFailed, pageShown, noteLog, now } = ctx
   const get = req.method === "GET" || req.method === "HEAD"
   const q = url.searchParams
   const all = q.get("all") === "1"
@@ -145,6 +150,62 @@ async function apiV2(ctx, req, res, url, parts) {
   const isHidden = (p) => isNoise(p, hidden())
   const v22 = await apiV22(ctx, { get, parts: parts.map(decode), isKey, q })
   if (v22) return json(res, v22.body, v22.status ?? 200)
+  // What lists, counts and the tree show (ctx.listed): archived items only when asked for (?archived=1).
+  const listed = () => ctx.listed({ archived: q.get("archived") === "1" })
+  if (req.method === "POST" && parts[0] === "events" && parts[1] === "ack" && parts.length === 2) {
+    // The page reports what happened to a notification it was sent: shown, error, failed (with why).
+    const b = await readBody(req)
+    const str = (v) => String(v ?? "").replace(/[\r\n]+/g, " ").slice(0, 200)
+    const result = str(b?.result)
+    if (result === "shown") pageShown?.(String(b?.group ?? ""))
+    else {
+      noteLog(`page ${result}: ${str(b?.group)} (permission ${str(b?.permission)}, tab ${str(b?.visible)})`)
+      pageFailed?.(String(b?.group ?? ""))
+    }
+    return json(res, {})
+  }
+  if (req.method === "POST" && parts[0] === "settings" && parts[1] === "test" && parts.length === 2) {
+    const via = await testNotify({ kind: "test", title: "Test", subtitle: "Mission control", message: "notifications work; a click opens the dashboard", url: "#/", group: "test" })
+    return json(res, { via })
+  }
+  if (parts[0] === "settings" && parts.length === 1) {
+    // Retention is Claude Code's own cleanupPeriodDays, in the config dir of the projects this dashboard reads.
+    const cc = registry.sources().find((s) => s.harness === "claude-code")
+    const retention = cc?.describe?.().source ? createRetention(dirname(cc.describe().source)) : null
+    const view = () => ({ ...settings.get(), autostart: autostart?.status() ?? { supported: false, enabled: false }, retention: retention?.get() ?? null })
+    if (get) return json(res, view())
+    if (req.method !== "POST") return false
+    const body = await readBody(req)
+    const keys = Object.keys(body ?? {})
+    const ok = (k) =>
+      k === "retentionDays" ? Number.isInteger(body[k]) && body[k] >= 1 && body[k] <= 3650
+      : k === "notifyDismiss" ? Number.isInteger(body[k]) && body[k] >= 0 && body[k] <= 600
+      : ["notify", "notifyDone", "autostart"].includes(k) && typeof body[k] === "boolean"
+    if (!keys.length || !keys.every(ok)) {
+      return json(res, { error: "send notify, notifyDone, autostart as booleans; notifyDismiss as 0-600 s; retentionDays as 1-3650" }, 400)
+    }
+    // Every precondition before any write, so a request is applied whole or not at all.
+    if ("autostart" in body && !autostart?.status().supported) return json(res, { error: autostart?.status().reason ?? "start at login is not available here" }, 501)
+    if ("retentionDays" in body) {
+      if (!retention) return json(res, { error: "no Claude Code config to change" }, 501)
+      const r = retention.get()
+      if (r.error) return json(res, { error: `${r.error}; not changing it` }, 409)
+    }
+    // Start at login first (launchctl can still refuse it, and then nothing else is written); if writing
+    // Claude Code's settings.json then fails, start at login is put back, so the request is whole or nothing.
+    let restart = false
+    if ("autostart" in body) restart = (await autostart.set(body.autostart)).restart
+    if ("retentionDays" in body) {
+      try { retention.set(body.retentionDays) } catch (e) {
+        if ("autostart" in body) await autostart.revert(body.autostart).catch(() => {})
+        throw e
+      }
+    }
+    if (keys.some((k) => k === "notify" || k === "notifyDone" || k === "notifyDismiss")) settings.set(body)
+    json(res, { ...view(), restarting: restart })
+    if (restart) setTimeout(() => onRestart?.(), 300)
+    return
+  }
   if (get && parts[0] === "sources" && parts.length === 1) {
     await registry.list() // refresh per-source errors
     return json(res, registry.sources().map((s) => ({
@@ -153,7 +214,7 @@ async function apiV2(ctx, req, res, url, parts) {
     })))
   }
   if (get && parts[0] === "overview" && parts.length === 1) {
-    const items = await place(await registry.list(), git, hidden())
+    const items = await place(await listed(), git, hidden())
     const shown = all ? items : items.filter((i) => !i.hidden)
     return json(res, { ...(await registry.overview(shown)), hidden: items.length - shown.length })
   }
@@ -161,7 +222,7 @@ async function apiV2(ctx, req, res, url, parts) {
     const limit = q.get("limit")
     if (limit !== null && !/^\d{1,6}$/.test(limit)) return json(res, { error: "bad limit" }, 400)
     const source = q.get("source"), id = q.get("id")
-    let items = await registry.list()
+    let items = await listed()
     if (source !== null) items = items.filter((i) => i.source === source)
     if (id !== null) items = items.filter((i) => i.id === id)
     return json(res, await placeFirst(items, git, hidden(), (i) => all || !i.hidden, limit === null ? Infinity : Number(limit)))
@@ -169,14 +230,14 @@ async function apiV2(ctx, req, res, url, parts) {
   if (get && parts[0] === "projects" && parts.length === 1) {
     const tz = tzOf()
     if (!isTz(tz)) return json(res, { error: "bad tz" }, 400)
-    const tree = await buildTree(await registry.list(), { git })
+    const tree = await buildTree(await listed(), { git })
     return json(res, shapeTree(tree, { tz, now: now(), slim: q.get("slim") === "1", isHidden }))
   }
   if (get && parts[0] === "project" && parts.length === 2) {
     const key = decode(parts[1])
     const tz = tzOf()
     if (!isKey(key) || !isTz(tz)) return json(res, { error: "not allowed" }, 400)
-    const p = (await buildTree(await registry.list(), { git, only: key })).find((x) => x.key === key)
+    const p = (await buildTree(await listed(), { git, only: key })).find((x) => x.key === key)
     return p ? json(res, shapeTree([p], { tz, now: now(), isHidden })[0]) : json(res, { error: "no such project" }, 404)
   }
   if (get && parts[0] === "usage" && parts.length === 1) {
@@ -226,6 +287,20 @@ async function apiV2(ctx, req, res, url, parts) {
     const fn = Object.hasOwn(src.extras ?? {}, key) ? src.extras[key] : null
     if (!fn) return notFound(res)
     return sendExtra(res, await fn(id, url.searchParams))
+  }
+  if (req.method === "POST" && parts[3] === "title" && parts.length === 4) {
+    const body = await readBody(req)
+    if (!body || typeof body !== "object" || (body.title != null && typeof body.title !== "string")) return json(res, { error: "title must be a string" }, 400)
+    if (!(await registry.get(source, id))) return json(res, { error: "no such item" }, 404)
+    return json(res, { title: titles.set(source, id, body.title) })
+  }
+  if (req.method === "POST" && parts[3] === "mark" && parts.length === 4) {
+    const body = await readBody(req)
+    const ok = body && typeof body === "object" && ["pinned", "archived"].some((k) => typeof body[k] === "boolean") &&
+      Object.keys(body).every((k) => (k === "pinned" || k === "archived") && typeof body[k] === "boolean")
+    if (!ok) return json(res, { error: "send pinned and/or archived as booleans" }, 400)
+    if (!(await registry.get(source, id))) return json(res, { error: "no such item" }, 404)
+    return json(res, marks.set(source, id, body))
   }
   if (req.method === "POST" && parts[3] === "action" && parts.length === 5) {
     const name = decode(parts[4])
@@ -293,41 +368,69 @@ const LOOPBACK = ["localhost", "127.0.0.1", "[::1]"]
  * `input` is one v1 adapter, one source, or an array of either. Every entry becomes a source;
  * the v1 routes (/api/runs, /api/run/..., /api/crew, /api/x/...) stay as aliases for the first adapter.
  */
-export function createServer(input, { port = 4319, distDir = DEFAULT_DIST, git, config = null, now = () => Date.now(), loops = null, heartbeatMs = 15_000, eventsPollMs = 1000, claudeHome = null, codexHome = null, prs = null, remote = null } = {}) {
+export function createServer(input, { port = 4319, distDir = DEFAULT_DIST, git, config = null, titlesPath = null, marksPath = null, settingsPath = null, notifyLogPath = null, notifier = null, ackWaitMs = 5000, autostart = null, onRestart = null, now = () => Date.now(), loops = null, heartbeatMs = 15_000, eventsPollMs = 1000, claudeHome = null, codexHome = null, prs = null, remote = null } = {}) {
   const entries = Array.isArray(input) ? input : [input]
   // Loop thresholds from config.json {"loops": {...}} (re-read when the file changes); `loops` injects them.
   const loopCfg = typeof loops === "function" ? loops : loops ? () => loops : createLoopConfig(config)
   const sources = entries.map((e) => (typeof e.listItems === "function" ? e : fromAdapter(e, { loops: loopCfg, now })))
-  const registry = createRegistry(sources)
+  // `titlesPath`: where page renames live; null turns renaming off. The CLI passes ~/.mission-control/titles.json.
+  const titles = createTitles(titlesPath)
+  const marks = createMarks(marksPath)
+  const registry = createRegistry(sources, { titles, marks })
   const adapter = entries.find((e) => typeof e.listRuns === "function") ?? null
+  // What every list, count and the phone sees: archived items stay out unless asked for (`archived: true`) or
+  // open again (resuming one never hides live work), and
+  // the earlier part of a chat that changed session id (parkedInto) always does: it is listed once, under its newest id.
+  const listed = async ({ archived = false } = {}) => (await registry.list()).filter((i) => !i.parkedInto && (archived || !i.archived || i.open === true))
   // `config`: path of config.json ({ "hide": [...] }); null reads nothing. The CLI passes ~/.mission-control/config.json.
   // `claudeHome` / `codexHome`: where the config readers look (names only); null reads nothing. The CLI passes the real ones.
   // `prs`: a createPrReader() for the per-PR usage view (null: none, so tests never run gh); budgets come from `config`.
-  const ctx = { adapter, registry, git, hide: createHide(config), now, claudeHome, codexHome, configPath: config, prs, budgets: createBudgets(config), windowConfig: createWindowConfig(config) }
+  const settings = createSettings(settingsPath)
+  // Each notification sent, and what the page reports back about showing it, also goes to `notifyLogPath`.
+  const noteLog = (text) => {
+    const line = `${new Date().toISOString()} ${text}`
+    console.log(line)
+    if (notifyLogPath) try {
+      mkdirSync(dirname(notifyLogPath), { recursive: true, mode: 0o700 })
+      // Kept to about 1 MB: the previous log moves to .1, replacing the one before it.
+      try { if (statSync(notifyLogPath).size > 1_000_000) renameSync(notifyLogPath, `${notifyLogPath}.1`) } catch { /* no log yet */ }
+      appendFileSync(notifyLogPath, line + "\n", { mode: 0o600 })
+    } catch { /* logging must not break notifying */ }
+  }
+  let notifyVia = async (m) => (noteLog(`notify ${m.title}: ${m.subtitle ?? ""} via none (server starting)`), "none") // set once listening
+  const shownOnPage = new Map() // group -> { m, at }: sent to a tab, until it reports back
+  let pageFailed = () => {} // set once listening
+  const pageShown = (group) => shownOnPage.delete(group)
+  const ctx = { adapter, registry, git, hide: createHide(config), now, claudeHome, codexHome, configPath: config, prs, budgets: createBudgets(config), windowConfig: createWindowConfig(config), titles, marks, listed, settings, noteLog, testNotify: (m) => notifyVia(m), pageFailed: (g) => pageFailed(g), pageShown, autostart, onRestart }
   // v2.3 remote answering: `remote` = { home, remoteDir, hooksDir, flags?, ... } turns on the runtime
   // control (status, POST /api/remote/enabled, the second listener). Without it, status is read-only defaults.
   let actualPort = port
-  const needsYou = async () => {
-    const items = await place(await registry.list(), git, ctx.hide.list())
-    return (await registry.overview(items.filter((i) => !i.hidden))).needsYou
-  }
+  // What the phone, the notifier and every surface agree on: listed() without hidden (noise) projects.
+  const shown = async () => (await place(await listed(), git, ctx.hide.list())).filter((i) => !i.hidden)
+  const needsYou = async () => (await registry.overview(await shown())).needsYou
+  // With the notifier on, its dispatcher decides which channel gets each prompt, so the remote server does
+  // not ping phones on its own as well.
   const remoteControl = remote
-    ? createRemoteControl({ configPath: config, distDir, needsYou, watchDirs: () => registry.watchTargets().dirs, dashboardPort: () => actualPort, ...remote })
+    ? createRemoteControl({ configPath: config, distDir, needsYou, watchDirs: () => registry.watchTargets().dirs, dashboardPort: () => actualPort, ...(notifier ? { pushOnNewPrompt: false } : {}), ...remote })
     : null
   if (!existsSync(join(distDir, "index.html"))) {
     console.error(`mission control: no built page at ${join(distDir, "index.html")} — run npm run build`)
   }
   // Server-Sent Events: "changed" when a hook line lands or a live session file grows; "heartbeat" keeps
-  // the page's freshness badge honest. The feed runs only while at least one page listens.
+  // the page's freshness badge honest; "notify" carries a notification to a page that asked for them
+  // (?notify=1, with &visible=1 while its tab is in view). The feed runs only while at least one page listens.
   const clients = new Set()
+  const notifyPages = new Map() // res -> whether its tab is visible
   const drop = (r) => {
     clients.delete(r)
+    notifyPages.delete(r)
     if (!clients.size) feed.stop()
   }
   // One dead socket must not stop the others (or the feed callback): a failed write drops that client only.
-  const send = (event) => {
-    for (const r of clients) {
-      try { r.write(`event: ${event}\ndata: {}\n\n`) } catch { drop(r); try { r.destroy() } catch { /* already gone */ } }
+  const send = (event, data = {}, to = clients) => {
+    const frame = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
+    for (const r of to) {
+      try { r.write(frame) } catch { drop(r); try { r.destroy() } catch { /* already gone */ } }
     }
   }
   const feed = createChangeFeed({ targets: () => registry.watchTargets(), pollMs: eventsPollMs, onChange: () => send("changed") })
@@ -337,6 +440,8 @@ export function createServer(input, { port = 4319, distDir = DEFAULT_DIST, git, 
     res.writeHead(200, { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-store", connection: "keep-alive", "x-accel-buffering": "no" })
     res.write("retry: 2000\nevent: heartbeat\ndata: {}\n\n")
     clients.add(res)
+    const q = new URL(req.url, "http://localhost").searchParams
+    if (q.get("notify") === "1") notifyPages.set(res, q.get("visible") === "1")
     feed.start()
     res.on("error", () => drop(res))
     req.on("close", () => drop(res))
@@ -426,15 +531,53 @@ export function createServer(input, { port = 4319, distDir = DEFAULT_DIST, git, 
       v6.on("error", (e) => console.error(`mission control: ::1 listener failed: ${e.code ?? e.message}`))
       v6.listen(actual, "::1")
       console.log(`mission control on http://localhost:${actual}`)
+      // `notifier`: { mac } turns notifications on (mac: the macOS fallback, or null); the sidebar switches and
+      // paired phones decide what is sent, the dispatcher where. Off (null) in tests unless injected.
+      const watcher = notifier ? (() => {
+        const link = (n) => `#/item/${encodeURIComponent(n.source)}/${encodeURIComponent(n.id)}/lanes`
+        // A tab takes a notification only while the sidebar switch for its kind is on (see createDispatcher).
+        const wants = (m) => (m.kind === "done" ? settings.get().notifyDone : m.kind === "needs" ? settings.get().notify : true)
+        const pages = () => { let visible = 0, hidden = 0; for (const v of notifyPages.values()) v ? visible++ : hidden++; return { visible, hidden } }
+        // The most recently connected tab of that kind: one alert (and one ack) however many tabs are open.
+        const toPages = (visible, m) => {
+          const r = [...notifyPages].filter(([, v]) => v === visible).map(([res]) => res).pop()
+          if (!r) return
+          const at = Date.now()
+          if (m.group) shownOnPage.set(m.group, { m, at })
+          send("notify", { ...m, dismissAfter: settings.get().notifyDismiss }, [r])
+          // A tab that never answers (a half-closed connection still counts as connected) failed too.
+          if (m.group) setTimeout(() => { if (shownOnPage.get(m.group)?.at === at) pageFailed(m.group, "no answer from the page") }, ackWaitMs).unref?.()
+        }
+        const mac = notifier.mac === true ? macNotify : notifier.mac || null
+        const dispatch = createDispatcher({ pages, toPages, phone: remoteControl?.push ?? null, mac, wants })
+        // A tab that reports it could not show one (permission gone, an error) hands it to macOS once.
+        pageFailed = (group, why = "the page could not show it") => {
+          const p = shownOnPage.get(group)
+          shownOnPage.delete(group)
+          if (!p || Date.now() - p.at > 60_000 || !mac) return
+          mac(p.m)
+          noteLog(`notify ${p.m.title}: ${p.m.subtitle ?? ""} via macOS (${why})`)
+        }
+        notifyVia = async (m) => {
+          const via = await dispatch(m)
+          noteLog(`notify ${m.title}: ${m.subtitle ?? ""} via ${via}`)
+          return via
+        }
+        const phoneOn = () => !!remoteControl?.push.available()
+        const enabled = (kind) => (kind === "done" ? settings.get().notifyDone : settings.get().notify || phoneOn())
+        return startNotifier({ list: shown, overview: (items) => registry.overview(items), enabled, link, notify: notifyVia })
+      })() : null
       // Warm caches (Claude Code list, usage scan) without holding the first request.
       for (const s of registry.sources()) Promise.resolve().then(() => s.warm?.()).catch(() => {})
       resolveStart({
         port: actual,
         remote: remoteControl,
+        needsYou, // what the phone is offered (no hidden, archived or parked items); exposed for tests
         close: async () => {
           await remoteControl?.close().catch(() => {})
           return new Promise((done) => {
             clearInterval(beat)
+            watcher?.stop()
             feed.stop()
             for (const r of clients) r.end()
             clients.clear()

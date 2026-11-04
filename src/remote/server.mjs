@@ -8,7 +8,7 @@ import { join, resolve, sep } from "node:path"
 import { ANSWER_REASONS, ERRORS, HEARTBEAT_SECONDS, SERVER_HEARTBEAT_MS } from "./contract.mjs"
 import { appendAudit, appendToggle } from "./audit.mjs"
 import { createChangeFeed } from "../events.mjs"
-import { createNewPromptWatch, loadVapid, ping, setSubscription, validSubscription } from "./push.mjs"
+import { createNewPromptWatch, loadVapid, ping, readSubscriptions, setSubscription, validSubscription } from "./push.mjs"
 import { clearCookieHeader, createPairLimiter, listDevices, pairingStatus, redeemToken, verifyDevice } from "./pairing.mjs"
 import { abandonAll, abandonAnswered, decide, isPromptId, joinEntries, listPending, pendingDir } from "./prompts.mjs"
 import { ensureDir, isPidAlive, readConfigFile, readJson, readRemoteConfig, remoteFromConfig, removeFile, startHeartbeat, validateRemote, writeJsonAtomic, writeRemoteEnabled } from "./state.mjs"
@@ -85,7 +85,7 @@ async function serveShell(res, distDir, pathname) {
  * `ctx`: { remoteDir, hooksDir, home, distDir, needsYou(), watchDirs(), seen(deviceId), known, now, isAlive }.
  */
 export function createRemoteServer({ port, host, ...ctx }) {
-  const { remoteDir, hooksDir, home, distDir, needsYou, watchDirs = () => [], now = () => Date.now(), isAlive = isPidAlive, seen = () => {}, known = new Map(), heartbeatMs = HEARTBEAT_SECONDS * 1000 - 500, scanMs = 1000, pushFetch = globalThis.fetch } = ctx
+  const { remoteDir, hooksDir, home, distDir, needsYou, watchDirs = () => [], now = () => Date.now(), isAlive = isPidAlive, seen = () => {}, known = new Map(), heartbeatMs = HEARTBEAT_SECONDS * 1000 - 500, scanMs = 1000, pushFetch = globalThis.fetch, pushOnNewPrompt = true } = ctx
   const hosts = new Set([host, `${host}:443`])
   const origin = `https://${host}`
   const limiter = ctx.limiter ?? createPairLimiter({ now })
@@ -107,13 +107,14 @@ export function createRemoteServer({ port, host, ...ctx }) {
   const beat = setInterval(() => push("heartbeat"), heartbeatMs)
   beat.unref?.()
   // Outcome B: a prompt answered in the terminal gets an abandon, so its hook exits at once.
-  // A new prompt pings subscribed phones (Web Push, no payload), once per prompt.
-  const pings = createNewPromptWatch(() => {
+  // A new prompt pings subscribed phones (Web Push, no payload), once per prompt; off when the dashboard's
+  // notification dispatcher decides which channel gets each prompt (pushOnNewPrompt: false).
+  const pings = pushOnNewPrompt ? createNewPromptWatch(() => {
     ping({ remoteDir, deviceIds: listDevices({ remoteDir }).map((d) => d.id), fetch: pushFetch, now }).catch(() => {})
-  })
+  }) : null
   const scan = setInterval(() => {
     try { if (abandonAnswered({ remoteDir, hooksDir, now: now(), isAlive }) > 0) push("changed") } catch { /* next scan */ }
-    try { pings(listPending({ remoteDir, hooksDir, isAlive }).map((p) => p.promptId)) } catch { /* next scan */ }
+    if (pings) try { pings(listPending({ remoteDir, hooksDir, isAlive }).map((p) => p.promptId)) } catch { /* next scan */ }
   }, scanMs)
   scan.unref?.()
 
@@ -251,7 +252,7 @@ const CONTROL_FILE = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
  * defaults), the listener's lifecycle, server.json, the CLI control files and the status the dashboard
  * shows. `dashboardPort()` gives the :4319 listener's actual port.
  */
-export function createRemoteControl({ home, remoteDir, hooksDir, configPath, dashboardPort, flags = null, distDir, needsYou, watchDirs, now = () => Date.now(), log = (s) => console.log(s), isAlive = isPidAlive, heartbeatMs = SERVER_HEARTBEAT_MS, controlMs = 250, scanMs, eventsHeartbeatMs }) {
+export function createRemoteControl({ home, remoteDir, hooksDir, configPath, dashboardPort, flags = null, distDir, needsYou, watchDirs, now = () => Date.now(), log = (s) => console.log(s), isAlive = isPidAlive, heartbeatMs = SERVER_HEARTBEAT_MS, controlMs = 250, scanMs, eventsHeartbeatMs, pushOnNewPrompt = true, pushFetch }) {
   let listener = null
   let queue = Promise.resolve()
   const lastSeen = new Map()
@@ -289,7 +290,8 @@ export function createRemoteControl({ home, remoteDir, hooksDir, configPath, das
 
   async function open(eff) {
     const l = await createRemoteServer({
-      port: eff.port, host: eff.host, remoteDir, hooksDir, home, distDir, needsYou, watchDirs, now, isAlive, known, limiter,
+      port: eff.port, host: eff.host, remoteDir, hooksDir, home, distDir, needsYou, watchDirs, now, isAlive, known, limiter, pushOnNewPrompt,
+      ...(pushFetch ? { pushFetch } : {}),
       seen: (id) => lastSeen.set(id, new Date(now()).toISOString()),
       ...(scanMs ? { scanMs } : {}), ...(eventsHeartbeatMs ? { heartbeatMs: eventsHeartbeatMs } : {}),
     })
@@ -353,10 +355,19 @@ export function createRemoteControl({ home, remoteDir, hooksDir, configPath, das
     }
   }
 
+  // Phones the dispatcher can ping: remote answering on, and a paired device that turned push on.
+  const pushDevices = () => {
+    const subs = readSubscriptions(remoteDir)
+    return listDevices({ remoteDir }).map((d) => d.id).filter((id) => subs[id])
+  }
   return {
     status,
     setEnabled,
     lastSeen,
+    push: {
+      available: () => !!listener && pushDevices().length > 0,
+      ping: () => ping({ remoteDir, deviceIds: listDevices({ remoteDir }).map((d) => d.id), ...(pushFetch ? { fetch: pushFetch } : {}), now }).catch(() => 0),
+    },
     isOn: () => !!listener,
     port: () => listener?.port ?? null,
     /**
