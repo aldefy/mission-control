@@ -1,7 +1,7 @@
 // The hook side of remote answering (spec FR-16–FR-20, contract C33). node: built-ins only, no socket:
 // the hook talks to the server through files under remote/. Every way out that is not an accepted,
 // still-valid decision prints nothing, so the terminal prompt handles the request as it does today.
-import { recordAskOpen, recordRemoteAnswered, targetOf } from "../hooks.mjs"
+import { phoneCanShow, recordAskOpen, recordRemoteAnswered, targetOf } from "../hooks.mjs"
 import { listDevices } from "./pairing.mjs"
 import { claimAbandon, clearedSince, isAnswerableAsk, newPromptId, readDecision, removePending, sanitizeQuestions, validateAnswers, writePending } from "./prompts.mjs"
 import { isPidAlive, readServer } from "./state.mjs"
@@ -54,6 +54,8 @@ export function buildPending({ harness, kind, input, now = Date.now(), pid = pro
     if (callId) p.callId = callId
   }
   if (kind === "ask") p.questions = sanitizeQuestions(input.tool_input?.questions)
+  // Listed on the phone as "answer at the computer": it cannot show the whole action (see phoneCanShow).
+  if (kind === "permission" && !phoneCanShow(p.tool, input.tool_input)) p.computerOnly = true
   return p
 }
 
@@ -102,7 +104,7 @@ export function codexPermissionOutput(decision) {
  */
 export function outputFor({ harness, pending, decision, toolInput }) {
   if (pending.kind === "permission") {
-    if (decision !== "allow" && decision !== "deny") return ""
+    if (pending.computerOnly || (decision !== "allow" && decision !== "deny")) return ""
     return JSON.stringify(harness === "codex" ? codexPermissionOutput(decision) : claudePermissionOutput(decision))
   }
   if (harness !== "claude-code" || !decision || typeof decision !== "object" || !validateAnswers(pending.questions, decision.answers)) return ""

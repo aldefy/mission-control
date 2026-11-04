@@ -363,6 +363,12 @@ async function api(ctx, req, res, url) {
 }
 
 const LOOPBACK = ["localhost", "127.0.0.1", "[::1]"]
+const SECURITY_HEADERS = {
+  "x-frame-options": "DENY",
+  "content-security-policy": "frame-ancestors 'none'",
+  "x-content-type-options": "nosniff",
+  "referrer-policy": "no-referrer",
+}
 
 /**
  * `input` is one v1 adapter, one source, or an array of either. Every entry becomes a source;
@@ -452,6 +458,8 @@ export function createServer(input, { port = 4319, distDir = DEFAULT_DIST, git, 
   const handler = async (req, res) => {
     // DNS rebinding: a foreign page can reach 127.0.0.1 under its own hostname. Only loopback
     // Host names on our own port are served, so the Origin check below cannot be fooled.
+    // No other site may frame the dashboard (clickjacking its switches), sniff a response type or get a referrer.
+    for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.setHeader(k, v)
     if (!hosts.has(req.headers.host)) return json(res, { error: "host not allowed" }, 403)
     try {
       const url = new URL(req.url, "http://localhost")

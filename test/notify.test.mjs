@@ -78,13 +78,24 @@ test("dispatcher: a tab whose switch is off is skipped (the phone gets it), and 
   assert.deepEqual(got, ["ping", "ping", "mac needs", "mac after error"])
 })
 
-test("macNotify: quotes, backslashes and newlines stay inside the AppleScript strings", async () => {
+test("macNotify: a fixed script, with every value passed as an argument (none can run as AppleScript)", async () => {
   const { macNotify } = await import("../src/notify.mjs")
   const calls = []
-  macNotify({ title: "Needs you", subtitle: 'say "hi" \\ bye', message: "line1\nline2", where: 'x" & do shell script "rm' }, (cmd, args) => calls.push([cmd, args]))
-  assert.equal(calls[0][0], "osascript")
-  const script = calls[0][1][1]
-  assert.equal(script, 'display notification "x\\" & do shell script \\"rm" with title "say \\"hi\\" \\\\ bye" subtitle "Needs you · line1 line2"')
+  // The 2.5.0 bug: escaping before the 200-character cut left a lone backslash that swallowed the closing
+  // quote, and the title then ran as AppleScript (do shell script).
+  const where = "a".repeat(199) + '"tail'
+  const title = "& (do shell script (string id {105,100})) & 1 -- "
+  macNotify({ title: "Needs you", subtitle: title, message: "line1\nline2\u0007", where }, (cmd, args) => calls.push([cmd, args]))
+  const [cmd, args] = calls[0]
+  assert.equal(cmd, "osascript")
+  const sep = args.indexOf("--")
+  const script = args.slice(0, sep).filter((a) => a !== "-e").join("\n")
+  assert.equal(script, "on run argv\ndisplay notification (item 1 of argv) with title (item 2 of argv) subtitle (item 3 of argv)\nend run")
+  for (const v of [where, title]) assert.ok(!script.includes(v.slice(0, 20)), "no value is part of the script")
+  const [w, t, sub] = args.slice(sep + 1)
+  assert.equal(w, ("a".repeat(199) + '"tail').slice(0, 200))
+  assert.equal(t, title.trim())
+  assert.equal(sub, "Needs you · line1 line2", "one line, control characters dropped")
 })
 
 test("server: a notification goes to a visible ?notify=1 page first, a background one next, else the macOS fallback", async () => {

@@ -37,6 +37,23 @@ export function maskSecrets(text) {
   return out
 }
 
+// Tools whose whole effect is their one command or path, so the phone can show all of it. Write, Edit, MCP
+// tools, WebFetch, Task and the rest carry more than that (contents, URLs, arguments): those are answered at
+// the computer.
+const PHONE_TOOLS = new Set(["Bash", "Read", "shell", "local_shell", "exec_command"])
+
+/**
+ * Whether a permission prompt can be answered from the phone: the phone shows the entire action. Only the
+ * tools above, with a command or path that fits the card on one line. A longer command would be cut and a
+ * multi-line one shown with its line breaks as spaces, so the phone would approve something it never showed.
+ */
+export function phoneCanShow(toolName, toolInput) {
+  if (!PHONE_TOOLS.has(toolName) || !toolInput || typeof toolInput !== "object") return false
+  const v = [toolInput.command, toolInput.file_path, toolInput.path].find((x) => typeof x === "string" && x.trim())
+  if (!v || /[\r\n\u2028\u2029]/.test(v)) return false
+  return v.trim().length <= MAX_TARGET
+}
+
 /**
  * What a tool call is about, secret-safe: the first 120 characters of its command or file path, on one
  * line, with obvious secrets masked. Nothing else from tool_input is ever kept (no file contents, no edit

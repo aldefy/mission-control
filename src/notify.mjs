@@ -1,6 +1,10 @@
 import { execFile } from "node:child_process"
 
-const as = (s) => `"${String(s).replace(/[\\"]/g, "\\$&").replace(/\s+/g, " ").slice(0, 200)}"`
+// One line, at most 200 characters, no control characters. The text is never part of the script itself.
+const clean = (s) => String(s ?? "").replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 200)
+// The script is fixed: the notification's text goes in as arguments (`on run argv`), so nothing in a session
+// title, folder or branch can end a string and run as AppleScript (no escaping to get wrong).
+const SCRIPT = ["on run argv", "display notification (item 1 of argv) with title (item 2 of argv) subtitle (item 3 of argv)", "end run"]
 
 /**
  * A macOS notification through osascript (no click action: osascript cannot carry one); never throws.
@@ -9,8 +13,7 @@ const as = (s) => `"${String(s).replace(/[\\"]/g, "\\$&").replace(/\s+/g, " ").s
 export function macNotify({ title, subtitle, message, where }, run = execFile) {
   const head = subtitle || title
   const what = subtitle ? `${title} · ${message}` : message
-  const script = `display notification ${as(where || " ")} with title ${as(head)} subtitle ${as(what)}`
-  run("osascript", ["-e", script], { timeout: 5000 }, () => {})
+  run("osascript", [...SCRIPT.flatMap((l) => ["-e", l]), "--", clean(where) || " ", clean(head), clean(what)], { timeout: 5000 }, () => {})
 }
 
 const HARNESS = { "claude-code": "Claude Code", codex: "Codex" }
