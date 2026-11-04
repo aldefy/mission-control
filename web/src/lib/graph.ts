@@ -77,13 +77,21 @@ export function crewGraph(state: State, events: Ev[]): CrewGraph {
 export const nodeOf = (g: CrewGraph, stage: string) =>
   g.nodes.find((n) => n.stages.includes(stage)) ?? g.nodes.find((n) => n.id === stage) ?? null
 
-export type Stop = { stage?: string; rule?: string; detail?: string; ts?: string; waiting: boolean; /** answered by signing (Ronin's contract) */ sign?: boolean }
+export type ReadDoc = { label: string; path: string }
+export type Stop = { stage?: string; rule?: string; detail?: string; ts?: string; waiting: boolean; /** answered by signing (Ronin's contract) */ sign?: boolean; /** run files to read before answering */ read?: ReadDoc[] }
+
+/** A stop's `read` list, kept only when well formed: a short label and a relative path with no "..". */
+export function readDocs(v: unknown): ReadDoc[] {
+  if (!Array.isArray(v)) return []
+  return v.filter((r): r is ReadDoc => !!r && typeof r.label === "string" && typeof r.path === "string" && r.path.length < 200 && !r.path.includes("..") && !r.path.startsWith("/"))
+    .slice(0, 6).map((r) => ({ label: r.label.slice(0, 80), path: r.path }))
+}
 
 /** The stop the run is on now, by the shared rule (src/status.mjs): the last `stop` not followed by
  * stage.start, human.input, run.resume or run.start. `waiting` only for an owner stop (rule "human" or "unverified"). */
 export function currentStop(_state: State, events: Ev[]): Stop | null {
   const e = openStop(events)
-  return e ? { stage: e.stage, rule: e.rule, detail: e.detail, ts: e.ts, waiting: OWNER_RULES.has(String(e.rule)), ...(e.sign === true ? { sign: true } : {}) } : null
+  return e ? { stage: e.stage, rule: e.rule, detail: e.detail, ts: e.ts, waiting: OWNER_RULES.has(String(e.rule)), ...(e.sign === true ? { sign: true } : {}), ...(readDocs(e.read).length ? { read: readDocs(e.read) } : {}) } : null
 }
 
 export type StageStatus = "running" | "stopped" | "done" | "skipped" | "failed" | "idle"

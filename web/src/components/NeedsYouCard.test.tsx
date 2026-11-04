@@ -55,3 +55,12 @@ describe("NeedsYouCard", () => {
     expect(onActed).toHaveBeenCalled()
   })
 })
+
+describe("NeedsYouCard read first", () => {
+  it("links each file to read before signing, through the source's raw extra", () => {
+    render(<NeedsYouCard source="ronin" id="r 1" ask={{ waiting: true, lane: "architect", detail: "Sign the contract", sign: true, read: [{ label: "contract.md · 38 rules", path: "spec/contract.md" }] }} actions={["sign"]} now={Date.now()} />)
+    const a = screen.getByText("contract.md · 38 rules").closest("a")!
+    expect(a.getAttribute("href")).toBe("/api/item/ronin/r%201/x/raw?path=spec%2Fcontract.md")
+    expect(a.getAttribute("target")).toBe("_blank")
+  })
+})

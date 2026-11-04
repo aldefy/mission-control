@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { crewCards, crewGraph, currentStop } from "./graph"
+import { crewCards, crewGraph, currentStop, readDocs } from "./graph"
 
 describe("crewGraph", () => {
   it("lays stages out left to right with flow between neighbours", () => {
@@ -119,5 +119,12 @@ describe("crewCards", () => {
     expect(dead[0].status).toBe("idle")
     const live = crewCards(crewGraph(state, events), state, events, true)
     expect(live[0].status).toBe("running")
+  })
+})
+
+describe("readDocs", () => {
+  it("keeps only well-formed relative paths", () => {
+    expect(readDocs([{ label: "contract.md", path: "spec/contract.md" }, { label: "x", path: "../etc/passwd" }, { label: "y", path: "/abs" }, { path: "z" }, null])).toEqual([{ label: "contract.md", path: "spec/contract.md" }])
+    expect(readDocs("nope")).toEqual([])
   })
 })

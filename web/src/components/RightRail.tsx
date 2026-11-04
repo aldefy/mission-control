@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils"
 /** What the needs-you card shows: a run's open stop, else a lane that waits on you (a hook-reported session). */
 export function askOf(d: ItemDetail): Ask | null {
   const stop = openStopOf(d)
-  if (stop) return { waiting: stop.waiting, lane: stop.stage, rule: stop.rule, detail: stop.detail, ts: stop.ts, sign: stop.sign === true }
+  if (stop) return { waiting: stop.waiting, lane: stop.stage, rule: stop.rule, detail: stop.detail, ts: stop.ts, sign: stop.sign === true, read: stop.read }
   const w = d.lanes.find((l) => l.status === "waiting")
   if (w || d.summary.waiting) return { waiting: true, lane: w?.label, detail: w?.reason, ts: w?.ask?.since ?? d.summary.updatedAt ?? undefined, tool: w?.ask?.tool, target: w?.ask?.target, agent: w?.ask?.agent === true }
   return null
