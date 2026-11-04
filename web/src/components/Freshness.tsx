@@ -8,6 +8,7 @@ export function FreshnessBadge() {
   return (
     <span
       data-freshness={f.state}
+      data-tour="freshness"
       title={stale ? "No answer from the local server; still retrying. Pulses are paused." : "Last good answer from the local server"}
       className={cn("flex shrink-0 items-center gap-1.5 font-mono text-xs whitespace-nowrap tabular-nums", stale ? "font-semibold text-failed" : "text-faint")}
     >

@@ -36,7 +36,7 @@ export function StatusChips({
   onPick: (f: ChipFilter | null) => void
 }) {
   return (
-    <div className="no-scrollbar flex min-w-0 items-center gap-1.5 overflow-x-auto py-1" role="group" aria-label="Filter by status">
+    <div data-tour="chips" className="no-scrollbar flex min-w-0 items-center gap-1.5 overflow-x-auto py-1" role="group" aria-label="Filter by status">
       {CHIPS.map((c) => {
         const n = counts[c.filter]
         const on = active === c.filter

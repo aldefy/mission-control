@@ -93,7 +93,7 @@ function Header({ d, onRenamed }: { d: ItemDetail; onRenamed: () => void }) {
         {s.harness} · {s.kind}
         {s.branch ? ` · ${s.branch}` : ""}
       </span>
-      <span data-status-pill className={cn("flex items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-xs", STATUS_UI[shown].border, STATUS_UI[shown].text)}>
+      <span data-status-pill data-tour="status" className={cn("flex items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-xs", STATUS_UI[shown].border, STATUS_UI[shown].text)}>
         <StatusDot status={shown} labelled />
         {STATUS_UI[shown].label}
       </span>
@@ -185,9 +185,9 @@ export default function Item({ source, id, tab, call }: { source: string; id: st
       {!desktop && <RightRail part="ask" detail={d} calls={null} actions={actions} now={now} onActed={item.reload} flash={youFlash} />}
       <div className={cn("grid gap-6", !wide && "lg:grid-cols-[minmax(0,1fr)_320px]")}>
         <Tabs value={current} onValueChange={(v) => go(String(v))} className="min-w-0">
-          <TabsList variant="line" className="border-b">
+          <TabsList variant="line" className="border-b" data-tour="tabs">
             {tabs.map((t) => (
-              <TabsTrigger key={t} value={t}>
+              <TabsTrigger key={t} value={t} data-tour={`tab-${t}`}>
                 {LABEL[t] ?? t}
                 {t === "lanes" && <Count n={d.lanes.length} />}
                 {t === "calls" && <Count n={d.summary.counts?.calls} />}
@@ -201,7 +201,7 @@ export default function Item({ source, id, tab, call }: { source: string; id: st
             {d.lanes.length > 1 && <FlowStrip detail={d} now={now} onPick={(ids) => setFocus({ ids, n: Date.now() })} onYou={toYou} highlight={hoverLane} />}
             <LaneCards lanes={d.lanes} extras={extras} now={now} links={links} focus={focus} onOpen={(lane) => setSheet([lane])} onHover={setHoverLane} callHref={(c) => toHash({ view: "item", source, id, tab: "calls", call: c })} />
           </TabsContent>
-          <TabsContent value="map" className="relative pt-4">
+          <TabsContent value="map" className="relative pt-4" data-tour="map">
             <div className="absolute top-6 right-2 z-[2]">
               <ExpandButton onClick={() => setMapFull(true)} />
             </div>
@@ -280,7 +280,7 @@ export default function Item({ source, id, tab, call }: { source: string; id: st
           )}
         </Tabs>
         {!wide && (
-          <div className="flex flex-col gap-4 lg:sticky lg:top-0 lg:self-start">
+          <div data-tour="rail" className="flex flex-col gap-4 lg:sticky lg:top-0 lg:self-start">
             <SameFileWarnings warnings={conflicts.data?.warnings ?? []} self={{ source, id }} />
             <RightRail part={desktop ? "all" : "rest"} detail={d} calls={isSession ? calls.data : null} actions={actions} now={now} onActed={item.reload} onOpen={(lane) => setSheet([lane])} flash={desktop ? youFlash : 0} />
             {v1Run && (src?.extras ?? []).includes("tokens") && !tabs.includes("docs") && <TokenPanel runId={id} optional />}

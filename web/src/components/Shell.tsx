@@ -16,6 +16,7 @@ import { Sidebar } from "@/components/Sidebar"
 import { chipCounts, StatusChips } from "@/components/StatusChips"
 import { BudgetChip } from "@/components/Budgets"
 import { RemoteChip } from "@/components/RemoteChip"
+import { TourButton } from "@/components/Tour"
 import { useBudgets } from "@/lib/api-v22"
 import { browserTz } from "@/lib/api"
 
@@ -177,6 +178,7 @@ export function Shell({ route, children }: { route: Route; children: ReactNode }
           <button
             type="button"
             onClick={() => setPalette(true)}
+            data-tour="palette"
             aria-label="Search (⌘K)"
             className="flex h-8 w-8 items-center justify-center gap-2 rounded-md border bg-surface/60 text-xs text-muted-foreground hover:border-ring hover:text-foreground lg:w-56 lg:justify-start lg:px-2.5"
           >
@@ -184,6 +186,7 @@ export function Shell({ route, children }: { route: Route; children: ReactNode }
             <span className="hidden flex-1 text-left lg:inline">Search…</span>
             <kbd className="hidden rounded border px-1 font-mono text-xs lg:inline">⌘K</kbd>
           </button>
+          <TourButton />
           <ThemePicker theme={theme} />
         </div>
       </header>

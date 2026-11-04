@@ -175,7 +175,7 @@ export function Sidebar({
         </NavLink>
       </nav>
       <div className="px-2 pt-2">
-        <label className="flex h-8 items-center gap-2 rounded-md border border-sidebar-border bg-background/40 px-2 text-muted-foreground focus-within:border-ring">
+        <label data-tour="search" className="flex h-8 items-center gap-2 rounded-md border border-sidebar-border bg-background/40 px-2 text-muted-foreground focus-within:border-ring">
           <Search className="size-3.5 shrink-0" />
           <input
             value={query}
@@ -190,7 +190,7 @@ export function Sidebar({
         <span>Projects</span>
         <span className="tabular-nums">{tree.length}</span>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+      <div data-tour="tree" className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         {loading && !projects.length && <p className="px-2 py-1 text-xs text-faint">loading projects…</p>}
         {error && !projects.length && <p className="px-2 py-1 text-xs text-failed">could not load projects: {error}</p>}
         {!loading && !error && !tree.length && (
