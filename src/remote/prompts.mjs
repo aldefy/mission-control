@@ -202,6 +202,8 @@ export function decide({ remoteDir, hooksDir, promptId, bind, decision, device, 
     return { reason: "gone" }
   }
   if (typeof bind !== "string" || bind !== p.bind) return { reason: "changed" }
+  // The phone never showed the whole action: only the terminal may answer it.
+  if (p.computerOnly === true) return { error: "this prompt can only be answered at the computer" }
   // Replaced: the same session (same call) now waits on a newer prompt.
   if (readAll(remoteDir).some((x) => x.promptId !== p.promptId && samePlace(x, p) && x.askedAt > p.askedAt && isAlive(x.pid))) return { reason: "changed" }
   const prior = readDecision(remoteDir, promptId)
@@ -257,7 +259,7 @@ export function joinEntries(needsYou, pendings) {
 }
 
 function entryOf(e, p) {
-  const answerable = !!p && (p.kind === "permission" || isAnswerableAsk(p.questions))
+  const answerable = !!p && ((p.kind === "permission" && p.computerOnly !== true) || (p.kind === "ask" && isAnswerableAsk(p.questions)))
   const project = typeof e.project === "string" ? e.project : e.project?.name
   const base = {
     source: String(e.source), id: String(e.id), title: String(e.title ?? ""),
