@@ -42,7 +42,10 @@ export function sortItems(items: ItemSummary[], key: SortKey, dir: SortDir): Ite
   })
 }
 
-const HOVER = "relative z-10 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+// Row actions take no room until the row is hovered or has focus (tabbing onto its link shows them, so the
+// keyboard reaches them): kept in the layout but invisible, four of them squeezed the title to nothing in a
+// narrow Title column.
+const HOVER = "relative z-10 hidden group-hover:inline-flex group-focus-within:inline-flex"
 
 type Col = { key: SortKey; label: string; first: SortDir; className?: string; num?: boolean }
 
@@ -78,7 +81,7 @@ export function ItemTable({
 
   const cols: Col[] = [
     { key: "title", label: "Title", first: "asc" },
-    { key: "where", label: showProject ? "Project / branch" : "Branch", first: "asc", className: "w-[22%]" },
+    { key: "where", label: showProject ? "Project / branch" : "Branch", first: "asc", className: "w-[18%]" },
     { key: "harness", label: "Harness", first: "asc", className: "w-[92px]" },
     { key: "status", label: "Status", first: "asc", className: "w-[90px]" },
     { key: "lanes", label: "Lanes", first: "desc", num: true, className: "w-[54px]" },
@@ -93,7 +96,9 @@ export function ItemTable({
   if (!items.length) return <p className="px-1 py-6 text-center text-xs text-faint">{empty}</p>
   return (
     <div className="overflow-x-auto">
-      <table className="w-full table-fixed border-collapse text-xs">
+      {/* The fixed columns take ~530px plus 18% for project / branch: below this width the table scrolls
+          sideways rather than squeezing the Title column to nothing (it keeps ~140px). */}
+      <table className="w-full min-w-[820px] table-fixed border-collapse text-xs">
         <thead>
           <tr className="border-b text-left">
             {cols.map((c) => {

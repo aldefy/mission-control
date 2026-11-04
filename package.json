@@ -1,6 +1,6 @@
 {
   "name": "@aldefy/mission-control",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "description": "One local dashboard for all your AI coding work (Claude Code, Codex, any harness), with a Needs-you queue you can answer from your phone",
   "keywords": [
     "ai",

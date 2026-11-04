@@ -123,7 +123,15 @@ The guide has a complete worked run, writer snippets in Node, Python and Bash, a
 
 ## The pages
 
-**Home** lists what needs you, what is looping, what is ready for your next prompt (collapsed), what is live, and the latest work across every project. The top bar has a chip per state: **Needs you**, **Looping**, **Ready**, Working, Stopped, Done today; a click filters the sidebar and Home.
+**Home** lists what needs you, what is looping, what is ready for your next prompt (collapsed), what is live, and the latest work across every project. The top bar has a chip per state: **Needs you**, **Looping**, **Ready**, Working, Stopped, Done today, **Closed**; a click filters the sidebar and Home. **Show** on Recent picks open only, closed, all or archived. The **?** in the top bar starts a one-minute tour over one of your own sessions.
+
+**Each session** can be renamed from the page (the pencil by its title; Reset brings back Claude Code's own), pinned to the top, archived (it leaves lists and counts, and comes back while it is open again), and resumed: **copy resume** gives `cd <folder> && claude --resume <id>`, with `CLAUDE_CONFIG_DIR` for a second account. Names and marks live in `~/.mission-control/titles.json` and `marks.json`; Claude Code's files are never written. The session page also shows Claude Code's latest recap, and links the two halves of a chat that moved to a new session id (it is listed once, under the newest).
+
+**The sidebar's settings**, all off until you turn them on:
+
+- **Notifications:** Needs you and Done. Each one goes to exactly one place: a dashboard tab in view, else a paired phone with push on (Needs you only), else a background tab, else a macOS notification. Dismiss after, browser permission, and a **send test** that says where the test went.
+- **History, Keep sessions:** how many days Claude Code keeps transcripts (`cleanupPeriodDays`, default 30). It writes Claude Code's own `settings.json` (only that key), after a confirm that names the file. Raising it does not bring back sessions already deleted.
+- **Startup, Start at login** (macOS, an installed copy): a LaunchAgent per port that starts this dashboard at login. Turning it on from a dashboard you started by hand hands over to launchd, and the page reloads when it is back.
 
 The page gets pushed updates: `GET /api/events` (Server-Sent Events) says "changed" the moment a hook line lands or a live session file grows, and the page refetches at once. Polling every 2 s stays as the fallback, and the freshness badge counts the stream's heartbeats. Browsers allow about 6 open HTTP/1.1 connections per origin, and each tab holds one for the stream: with more than ~5 dashboard tabs open on the same address, further tabs (and their fetches) queue until one closes. Keep one or two tabs open, or open extra ones on `127.0.0.1` as well as `localhost` (two origins).
 
@@ -133,9 +141,12 @@ The page gets pushed updates: `GET /api/events` (Server-Sent Events) says "chang
 |---|---|
 | needs you | a permission prompt or question is open (hooks); the card shows the tool, the command or path and how long ago it was asked, and flags a **new prompt** when it changes |
 | looping | working, but retrying the same failure (below) |
-| working | live: its files changed in the last two minutes |
-| ready | done and waiting for your next prompt: Claude's idle reminder, or a Codex turn that ended in the last 30 minutes. Not urgent, so not in Needs you |
+| working | live: Claude Code reports the session busy, or (without that) its files changed in the last two minutes |
+| ready | done and waiting for your next prompt: a Claude Code session that is open and not busy, Claude's idle reminder, or a Codex turn that ended in the last 30 minutes. Not urgent, so not in Needs you |
+| closed | no Claude Code process is running it any more; dimmed and sorted last, never waiting or ready |
 | stopped / failed / done / idle | as before |
+
+Open, closed, working and Ready for Claude Code come from the `sessions/<pid>.json` files it keeps next to `projects/`. A pid that was reused by another process (checked against the file's start time with `ps` on macOS) does not count as open. An older Claude Code without those files falls back to file times.
 
 ## Looping
 
@@ -274,7 +285,7 @@ For remote answering there is exactly one write route, `POST /api/remote/enabled
 
 The built-in sources are read-only: they never write to a runs directory, a repo, `~/.claude` or `~/.codex`. The only things written are the hook logs under `~/.mission-control/hooks`, a usage cache under `~/.mission-control/cache`, the remote-answering state under `~/.mission-control/remote`, `remote.enabled` and `remote.host` in `config.json` when you turn remote answering on or off or run `remote setup`, `~/.mission-control/audit.jsonl`, and, only when you agree to it in `remote setup`, the hook entries in `~/.claude/settings.json` and `~/.codex/hooks.json`.
 
-The config readers behind "Config vs calls" read names only: MCP server names from `~/.claude.json` (`mcpServers`, and the project entry's `mcpServers` minus `disabledMcpServers`), a project's `.mcp.json`, enabled plugin names from `~/.claude/settings.json` and the project's `.claude/settings.json` / `settings.local.json`, skill folder names under `~/.claude/skills` and the project's `.claude/skills`, and `[mcp_servers.<name>]` table names from `$CODEX_HOME/config.toml`. Commands, arguments, URLs, environment variables, headers and tokens in those files are never returned, stored or logged. The only command the server runs besides read-only `git` is the optional read-only `gh pr list` above. It and the opt-in notification ping are the only things that may reach the network. Session names are confined to their root, so `..` and symlinks out of it are refused. The pages make no network requests outside their own server: they use system fonts and load nothing from elsewhere.
+The config readers behind "Config vs calls" read names only: MCP server names from `~/.claude.json` (`mcpServers`, and the project entry's `mcpServers` minus `disabledMcpServers`), a project's `.mcp.json`, enabled plugin names from `~/.claude/settings.json` and the project's `.claude/settings.json` / `settings.local.json`, skill folder names under `~/.claude/skills` and the project's `.claude/skills`, and `[mcp_servers.<name>]` table names from `$CODEX_HOME/config.toml`. Commands, arguments, URLs, environment variables, headers and tokens in those files are never returned, stored or logged. Besides read-only `git`, the server runs only: the optional read-only `gh pr list` above; `ps -o lstart=` for a session's process start time; and, only when you turn them on, `osascript` for a macOS notification (its text escaped, passed as one argument) and `launchctl bootstrap` / `bootout` for Start at login. Each runs with an argument list, never a shell string. `gh pr list` and the opt-in notification ping are the only things that may reach the network. Session names are confined to their root, so `..` and symlinks out of it are refused. The pages make no network requests outside their own server: they use system fonts and load nothing from elsewhere.
 
 ## Develop
 

@@ -39,6 +39,18 @@ Ideas and fixes, roughly in the order they'll land. Many came from people trying
 - **Phone notifications** (opt-in): a new prompt sends an empty Web Push ping; the app fetches the details over the tailnet.
 - Answerable prompts are listed first on the phone; the app reconnects when it comes back to the foreground.
 
+## Done in v2.5
+
+Session management, from Ayush Priyam's work (#3, #4, #5):
+
+- **Real session state from Claude Code's process files.** Open, closed, working and Ready come from `sessions/<pid>.json`, so Ready fills at once without hooks and idle sessions no longer read as working. A reused pid does not count as open. A **Closed** chip, closed rows dimmed and last, and **Show** on Recent: open only, closed, all, archived.
+- **Rename, pin, archive, resume.** Rename a session from the page (Claude Code's `/rename` and generated titles are used by default), pin it to the top, archive it, or copy its `claude --resume` command. A chat that moved to a new session id is listed once, and Claude Code's latest recap shows on the session page.
+- **Notifications, off by default.** Needs you and Done, each sent to one place only: a dashboard tab in view, a paired phone, a background tab or macOS. Phone pings that no push service accepts, and tabs that cannot show one, fall through to the next.
+- **Start at login** (macOS, LaunchAgent) and **Keep sessions** (Claude Code's `cleanupPeriodDays`), both opt-in from the sidebar.
+- **A guided tour** over one of your own sessions, from the **?** in the top bar.
+- CI runs on Node 20.19, 22 and 24.
+- Fixed: session titles disappeared from the Recent table on a 1440px-wide screen.
+
 ## Later
 
 - Cost per task (spec-kit task, Ronin stage).
