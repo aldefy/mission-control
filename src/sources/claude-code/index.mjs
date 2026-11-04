@@ -71,6 +71,7 @@ export function create({ root, now = () => Date.now(), hooksDir, cachePath, pars
   const lastTurns = createCache(4096) // path|size|mtime -> newest turn time in the tail of a main log
   const peeked = createCache(8192) // path|size|mtime -> peek of the head, so warm lists skip file reads
   const tailTitles = createCache(8192) // path|size|mtime -> title from the tail: /rename, else generated (or null)
+  const interrupts = createCache(8192) // path|size|mtime -> whether the last turn ended with an interrupt
   const opened = new Map() // id -> { lastMs, summary } of sessions already fully parsed, for list totals
   let liveFiles = [] // main logs of sessions live or waiting at the last listing, for /api/events
   let realRoot = null
@@ -204,6 +205,30 @@ export function create({ root, now = () => Date.now(), hooksDir, cachePath, pars
       }
       return best
     } catch { return 0 } finally { if (fd !== undefined) closeSync(fd) }
+  }
+
+  /** True when the newest user or assistant record in the tail is Claude Code's "[Request interrupted by user…]". */
+  function endedByInterrupt(file, size) {
+    let fd
+    try {
+      fd = openSync(file, "r")
+      const n = Math.min(size, TAIL_BYTES)
+      const buf = Buffer.alloc(n)
+      readSync(fd, buf, 0, n, size - n)
+      const lines = buf.toString("utf8").split("\n")
+      for (let i = lines.length - 1; i >= 0; i--) {
+        if (!lines[i].includes('"type":"user"') && !lines[i].includes('"type":"assistant"')) continue
+        try {
+          const j = JSON.parse(lines[i])
+          if (j?.type !== "user" && j?.type !== "assistant") continue
+          if (j.type === "assistant") return false
+          const c = j.message?.content
+          const text = typeof c === "string" ? c : Array.isArray(c) ? c.find((b) => b?.type === "text")?.text : null
+          return typeof text === "string" && text.startsWith("[Request interrupted by user")
+        } catch { /* half-written or cut first line */ }
+      }
+      return false
+    } catch { return false } finally { if (fd !== undefined) closeSync(fd) }
   }
 
   /**
@@ -456,6 +481,8 @@ export function create({ root, now = () => Date.now(), hooksDir, cachePath, pars
           const h = peeked.get(pk) ?? peeked.set(pk, peekFile(c, s.slug))
           let rt = tailTitles.get(pk)
           if (rt === undefined) rt = tailTitles.set(pk, tailTitle(c.real, c.st.size))
+          let stopped = interrupts.get(pk)
+          if (stopped === undefined) stopped = interrupts.set(pk, endedByInterrupt(c.real, c.st.size))
           const o = opened.get(s.id)
           const done = o && o.lastMs === lastMs ? o.summary : null
           const live = liveAt(lastMs)
@@ -474,6 +501,7 @@ export function create({ root, now = () => Date.now(), hooksDir, cachePath, pars
             tokens: done?.tokens ?? zero(), cost: done?.cost ?? 0,
             ...readyOf(w),
             ...(done ? {} : { partial: true }), // totals appear once the session is opened
+            ...(stopped ? { interrupted: true } : {}), // the last turn was stopped by the user, not finished
           }, procs))
         } catch { /* one unreadable file must not hide the rest */ }
       }

@@ -211,6 +211,17 @@ test("open state from <config>/sessions/<pid>.json: busy is working, a dead pid 
   assert.equal((await s.getItem("busy")).summary.resume, `cd /w && CLAUDE_CONFIG_DIR=${cfg} claude --resume busy`)
 })
 
+test("a last turn stopped with an interrupt is flagged; a later reply clears it", async () => {
+  const r = mkdtempSync(join(tmpdir(), "mc-cc-"))
+  mkdirSync(join(r, "-p"))
+  const user = (text) => JSON.stringify({ type: "user", cwd: "/w", message: { role: "user", content: [{ type: "text", text }] } })
+  const reply = JSON.stringify({ type: "assistant", message: { id: "m1", role: "assistant", content: [{ type: "text", text: "ok" }] } })
+  writeFileSync(join(r, "-p", "stopped.jsonl"), [user("go"), reply, user("[Request interrupted by user for tool use]"), JSON.stringify({ type: "last-prompt" })].join("\n") + "\n")
+  writeFileSync(join(r, "-p", "done.jsonl"), [user("go"), user("[Request interrupted by user]"), user("again"), reply].join("\n") + "\n")
+  const got = Object.fromEntries((await create({ root: r }).listItems()).map((i) => [i.id, !!i.interrupted]))
+  assert.deepEqual(got, { stopped: true, done: false })
+})
+
 test("parseTranscript: the newest away_summary is the recap, without the /config hint", () => {
   const recap = (t, ts) => JSON.stringify({ type: "system", subtype: "away_summary", content: `${t} (disable recaps in /config)`, timestamp: ts })
   const p = parseTranscript([recap("old", "2026-11-01T00:00:00Z"), recap("Tests pass; next, commit.", "2026-11-02T00:00:00Z")].join("\n"))

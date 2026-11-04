@@ -132,7 +132,10 @@ const remoteFlags = args["remote-port"] !== undefined ? { port: Number(args["rem
 const remote = { home, remoteDir: remoteDirFromEnv(), hooksDir: process.env.MISSION_CONTROL_HOOKS_DIR || defaultHooksDir(home), flags: remoteFlags }
 // The dashboard's own state (renames, pins and the like) sits next to config.json, under the same home.
 const stateFile = (name) => joinPath(home, ".mission-control", name)
-try { srv = await createServer(adapters, { port, config, claudeHome: home, codexHome, prs, remote, titlesPath: stateFile("titles.json"), marksPath: stateFile("marks.json") }) } catch { process.exit(1) }
+try { srv = await createServer(adapters, { port, config, claudeHome: home, codexHome, prs, remote, titlesPath: stateFile("titles.json"), marksPath: stateFile("marks.json"),
+    settingsPath: stateFile("settings.json"), notifyLogPath: stateFile("logs/notifications.log"),
+    // Notifications are sent only once switched on in the sidebar (or to a phone that turned push on).
+    notifier: { mac: process.platform === "darwin" } }) } catch { process.exit(1) }
 const started = await srv.remote.start()
 if (!started.ok) {
   console.error(`mission control: remote answering stays off: ${started.error}`)

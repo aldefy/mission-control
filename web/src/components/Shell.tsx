@@ -7,6 +7,7 @@ import { doneToday, worktreeLabel, type ChipFilter } from "@/lib/tree"
 import { cn } from "@/lib/utils"
 import { workingLine } from "@/lib/status-ui"
 import { BP, useMedia } from "@/lib/media"
+import { useNeedsYouNotifications } from "@/lib/notify"
 import { FreshnessBadge } from "@/components/Freshness"
 import { ThemePicker } from "@/components/ThemePicker"
 import { useTheme } from "@/lib/use-theme"
@@ -115,6 +116,7 @@ export function Shell({ route, children }: { route: Route; children: ReactNode }
     setFilter(f)
     if (f && !LISTS.has(route.view)) location.hash = toHash({ view: "home" })
   }
+  useNeedsYouNotifications()
   useEffect(() => store(SIDEBAR_KEY, sidebar ? "open" : "closed"), [sidebar])
   // Below lg the sidebar is an overlay drawer, closed by default and on every navigation.
   const desktop = useMedia(BP.lg)

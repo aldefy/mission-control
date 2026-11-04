@@ -317,3 +317,17 @@ test("notifications: subscribe needs a paired device and a known push service; a
     assert.equal(pings.length, 1)
   } finally { await srv.close() }
 })
+
+test("notifications: with pushOnNewPrompt off (the dashboard's dispatcher decides) a new prompt pings no phone", async () => {
+  const e = env()
+  const pings = []
+  const srv = await createRemoteServer({ port: 0, host: HOST, ...e, needsYou: async () => [], heartbeatMs: 200, scanMs: 50, pushOnNewPrompt: false, pushFetch: async (url) => { pings.push(url); return { status: 201 } } })
+  try {
+    const { cookie } = await pairDevice(srv.port, e)
+    assert.equal((await post(srv.port, "/api/remote/push/subscribe", { endpoint: "https://web.push.apple.com/x" }, { cookie })).status, 200)
+    await new Promise((r) => setTimeout(r, 150))
+    writePending(e.remoteDir, { promptId: newPromptId(), harness: "claude-code", sessionId: "s11", kind: "permission", tool: "Bash", target: "npm test", askedAt: new Date().toISOString(), pid: process.pid })
+    await new Promise((r) => setTimeout(r, 300))
+    assert.deepEqual(pings, [])
+  } finally { await srv.close() }
+})

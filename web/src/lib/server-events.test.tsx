@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, render } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { connectServerEvents, onServerChange } from "./server-events"
+import { connectServerEvents, onServerChange, onServerNotify, setServerNotify } from "./server-events"
 import { lastSeen, resetFreshness } from "./freshness"
 import { useFetch } from "./api"
 
@@ -9,11 +9,11 @@ class FakeES {
   static last: FakeES | null = null
   url: string
   closed = false
-  handlers = new Map<string, (() => void)[]>()
+  handlers = new Map<string, ((e?: { data: string }) => void)[]>()
   constructor(url: string) { this.url = url; FakeES.last = this }
-  addEventListener(name: string, fn: () => void) { this.handlers.set(name, [...(this.handlers.get(name) ?? []), fn]) }
+  addEventListener(name: string, fn: (e?: { data: string }) => void) { this.handlers.set(name, [...(this.handlers.get(name) ?? []), fn]) }
   close() { this.closed = true }
-  emit(name: string) { for (const fn of this.handlers.get(name) ?? []) fn() }
+  emit(name: string, data?: unknown) { for (const fn of this.handlers.get(name) ?? []) fn(data === undefined ? undefined : { data: JSON.stringify(data) }) }
 }
 
 beforeEach(() => resetFreshness())
@@ -33,6 +33,22 @@ describe("server events", () => {
     off()
     stop()
     expect(es.closed).toBe(true)
+  })
+
+  it("a page that wants notifications reconnects with ?notify=1 and hears 'notify' events", () => {
+    const stop = connectServerEvents((u) => new FakeES(u) as unknown as EventSource)
+    const first = FakeES.last!
+    const heard = vi.fn()
+    const off = onServerNotify(heard)
+    setServerNotify(() => true)
+    expect(first.closed).toBe(true)
+    expect(FakeES.last!.url).toMatch(/^\/api\/events\?notify=1&visible=[01]$/)
+    FakeES.last!.emit("notify", { title: "Done", subtitle: "day0paywall" })
+    expect(heard).toHaveBeenCalledWith({ title: "Done", subtitle: "day0paywall" })
+    setServerNotify(() => false)
+    expect(FakeES.last!.url).toBe("/api/events")
+    off()
+    stop()
   })
 
   it("a polling fetch refetches at once on 'changed', without waiting for its next poll", async () => {

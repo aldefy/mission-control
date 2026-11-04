@@ -242,6 +242,7 @@ Local only, no accounts, no cloud. There are two listeners.
 Besides the action routes, it has these write routes, all behind the two guards above:
 
 - `POST /api/item/:source/:id/title` (`{ "title": string }`, empty restores the source's title) and `POST /api/item/:source/:id/mark` (`{ "pinned"?: boolean, "archived"?: boolean }`). They write only the dashboard's own `~/.mission-control/titles.json` and `marks.json` (under `MISSION_CONTROL_HOME` when set); Claude Code's and Codex's files stay read-only. An unknown item is 404, a bad body 400.
+- `POST /api/settings` (`notify`, `notifyDone` booleans, `notifyDismiss` 0–600 seconds; anything else is 400) writes `~/.mission-control/settings.json`. `POST /api/settings/test` sends one test notification. `POST /api/events/ack` only lets a dashboard tab report whether it showed a notification; it writes a line to `~/.mission-control/logs/notifications.log` (kept to about 1 MB).
 
 For remote answering there is exactly one write route, `POST /api/remote/enabled`, behind the Remote answering switch. Its guards, in order: the loopback bind; the `Host` check above (403); a **required** `Origin` equal to `http://<the request's Host>` (missing or foreign: 403); `content-type: application/json` (else 415); a body of exactly `{"enabled": true|false}` (else 400). It can only turn remote answering on or off. `GET /api/remote/status` is read-only and never returns a token, secret or hash. No pairing, answering, device or revoke route exists on `:4319`.
 
