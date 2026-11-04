@@ -4,7 +4,9 @@ One local dashboard for all your AI coding work. It organises everything as **pr
 
 It reads Claude Code and Codex CLI sessions with no setup, and any other harness that writes a small run format or ships an adapter.
 
-▶ [Watch the 60-second demo](https://ronincrew.dev/mission-control)
+[![Watch the 80-second demo of mission-control 2.5](docs/screenshots/demo-poster.jpg)](https://ronincrew.dev/mission-control)
+
+▶ [Watch the 80-second demo](https://ronincrew.dev/mission-control): Needs you, sessions, the tour, notifications, settings and answering from your phone.
 
 ![Home: needs-you queue, live lanes and recent work](docs/screenshots/home.png)
 
