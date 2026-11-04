@@ -6,6 +6,7 @@ import { Steer } from "@/components/Steer"
 import { LiveTrace } from "@/components/LiveTrace"
 import { RunBannerView } from "@/components/RunBanner"
 import { PaneMount } from "@/components/PaneMount"
+import { postItemAction } from "@/lib/api"
 import { paneCtx, paneTabKey, usePanes } from "@/lib/panes"
 import { IconAction } from "@/components/IconAction"
 import { Retry } from "@/components/Retry"
@@ -188,7 +189,8 @@ export default function Item({ source, id, tab, call }: { source: string; id: st
   return (
     <div className="mx-auto flex max-w-[1500px] flex-col gap-4">
       <Header d={d} onRenamed={item.reload} />
-      {v1Run && <RunBannerView runId={id} events={events} live={!!d.summary.live} canPreview={(src?.extras ?? caps.data?.extras ?? []).includes("raw")} />}
+      {v1Run && <RunBannerView runId={id} events={events} live={!!d.summary.live} canPreview={(src?.extras ?? caps.data?.extras ?? []).includes("raw")}
+        actions={actions} state={d.state ?? null} act={(name, body) => postItemAction(source, id, name, body).then(() => item.reload())} />}
       {d.summary.recap && (
         <section aria-label="Recap" className="rounded-lg border bg-card px-3 py-2 text-sm">
           <span className="mr-2 font-mono text-xs text-faint">recap{d.summary.recap.ts ? ` · ${ago(d.summary.recap.ts, now)} ago` : ""}</span>

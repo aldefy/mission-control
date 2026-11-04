@@ -231,7 +231,7 @@ export type Lane = {
   nowDoing?: { name: string; kind: string; summary: string; ts: string }
   reason?: string
   /** The open prompt of a waiting lane: when it was asked, the tool and its command or path. */
-  ask?: { since?: string; tool?: string; target?: string }
+  ask?: { since?: string; tool?: string; target?: string; agent?: boolean }
   loop?: LoopInfo
   sinceChange?: SinceChange
   calls: number

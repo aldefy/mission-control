@@ -1,5 +1,5 @@
 import { isSessionName } from "./names.mjs"
-import { openStop } from "./status.mjs"
+import { openStop, OWNER_RULES } from "./status.mjs"
 
 // Turns a run's events (runs.jsonl) into a span tree for the Trace tab: run → stage → session →
 // tool call, plus markers. Pure: no node: imports, so Node tests and the browser load the same file.
@@ -34,7 +34,7 @@ export function buildTrace(events, { breakAfterMs = 120000, breakMs = 4000 } = {
   let waiting = false // after an owner stop, until the run moves again
   for (let i = 1; i < evs.length; i++) {
     const p = evs[i - 1]
-    if (p.type === "stop") waiting = p.rule === "human"
+    if (p.type === "stop") waiting = OWNER_RULES.has(p.rule)
     else if (["human.input", "run.resume", "run.start", "stage.start"].includes(p.type)) waiting = false
     const d = R[i] - R[i - 1]
     const open = busy.some(([a, b]) => a <= R[i - 1] && b >= R[i])
@@ -102,7 +102,7 @@ function assemble(evs, T, breaks, busy) {
       case "stop":
         // An owner stop waits on you; any other rule (budget, unsure, stage-failed…) is a failure.
         lastStop = e
-        if (e.rule === "human") { t.waits++; marker(i, "wait", e.detail || "waits on you", e.stage) }
+        if (OWNER_RULES.has(e.rule)) { t.waits++; marker(i, "wait", e.detail || "waits on you", e.stage) }
         else { t.errors++; marker(i, "stop", e.detail || e.rule || "stop", e.stage) }
         for (const rec of [...openStage.values()]) close(rec, i)
         break
@@ -270,12 +270,12 @@ function assemble(evs, T, breaks, busy) {
     delete s._i; delete s._ts1; delete s._mark
   }
 
-  // Status: the shared stop rule (src/status.mjs). An owner stop (rule "human") waits on you; any
+  // Status: the shared stop rule (src/status.mjs). An owner stop (rule "human" or "unverified") waits on you; any
   // other rule is stopped. Bookkeeping after the stop does not change that.
   const stop = openStop(evs)
   let lastMeaningful = null
   for (const e of evs) if (e.type !== "published") lastMeaningful = e
-  trace.status = stop ? (stop.rule === "human" ? "waiting" : "stopped") : lastMeaningful?.type === "run.end" ? (lastMeaningful.status === "stopped" ? "stopped" : "done") : "live"
+  trace.status = stop ? (OWNER_RULES.has(stop.rule) ? "waiting" : "stopped") : lastMeaningful?.type === "run.end" ? (lastMeaningful.status === "stopped" ? "stopped" : "done") : "live"
   t.durationMs = endT
   trace.markers.sort((a, b) => a.t - b.t)
   return trace
