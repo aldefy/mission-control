@@ -190,6 +190,7 @@ test("event-only stage holding the open stop is the waiting lane; broken source 
   const reg = createRegistry([fromAdapter(adapter), broken])
   const pick = ({ source, id, title, lane, detail }) => ({ source, id, title, lane, detail })
   assert.deepEqual((await reg.overview()).needsYou.map(pick), [{ source: "ronin", id: "r1", title: "x", lane: "learn", detail: "approve the lesson" }])
+  assert.equal((await reg.overview()).needsYou[0].sign, undefined, "a plain owner question is not signable")
   await withServer([adapter, broken], async (base) => {
     const list = await (await fetch(base + "/api/sources")).json()
     assert.equal(list[0].error, undefined)
@@ -209,4 +210,21 @@ test("fromAdapter: a stage whose state says running on a run that is not live is
   assert.notEqual(dead.summary.status, "working")
   const alive = await stub(true).getItem("r1")
   assert.equal(alive.lanes[0].status, "working")
+})
+
+test("a stop the source marks sign: true reaches the lane ask and the needs-you entry", async () => {
+  const adapter = {
+    name: "ronin",
+    listRuns: async () => [{ id: "r2" }],
+    getRun: async () => ({
+      live: false,
+      state: { idea: "y", stages: { architect: { status: "stopped" } } },
+      events: [{ ts: "2026-11-01T09:03:00Z", type: "stop", stage: "architect", rule: "human", detail: "Sign the contract", sign: true }],
+    }),
+    getSession: async () => null,
+  }
+  const item = await fromAdapter(adapter).getItem("r2")
+  assert.deepEqual(item.lanes.find((l) => l.id === "architect").ask, { since: "2026-11-01T09:03:00Z", sign: true })
+  const [ny] = (await createRegistry([fromAdapter(adapter)]).overview()).needsYou
+  assert.equal(ny.sign, true)
 })

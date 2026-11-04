@@ -50,7 +50,7 @@ describe("NeedsYouQueue", () => {
   })
 
   it("answer buttons when the source has actions, else an answer-in-terminal hint", () => {
-    render(<NeedsYouQueue entries={[ask("ronin"), ask("claude-code")]} stopped={[]} actions={{ ronin: ["sign", "say"], "claude-code": [] }} />)
+    render(<NeedsYouQueue entries={[ask("ronin", { sign: true }), ask("claude-code")]} stopped={[]} actions={{ ronin: ["sign", "say"], "claude-code": [] }} />)
     const [ronin, cc] = screen.getAllByRole("article")
     expect(within(ronin).getByText("tipcalc · qa")).toBeTruthy()
     expect(within(ronin).getByRole("button", { name: "Sign" })).toBeTruthy()
@@ -58,6 +58,13 @@ describe("NeedsYouQueue", () => {
     expect(within(ronin).queryByText(/answer in terminal/)).toBeNull()
     expect(within(cc).queryByRole("button")).toBeNull()
     expect(within(cc).getByText(/answer in terminal/)).toBeTruthy()
+  })
+
+  it("Sign only on a stop the source marks signable; any other question gets Answer only", () => {
+    render(<NeedsYouQueue entries={[ask("ronin", { lane: "product", detail: "Which feature should this run build first?" })]} stopped={[]} actions={{ ronin: ["sign", "say"] }} />)
+    const [ronin] = screen.getAllByRole("article")
+    expect(within(ronin).queryByRole("button", { name: "Sign" })).toBeNull()
+    expect(within(ronin).getByRole("link", { name: "Answer…" })).toBeTruthy()
   })
 
   it("lists stopped items under their own heading", () => {

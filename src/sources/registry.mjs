@@ -96,6 +96,8 @@ export function createRegistry(sources, { titles = null, marks = null } = {}) {
           source: i.source, id: i.id, ...where(i), lane: lane?.id ?? "", detail: lane?.reason ?? "",
           // The prompt's identity: when it was asked, and the tool and target it is about (when known).
           since: ask.since ?? null, tool: ask.tool ?? null, target: ask.target ?? null,
+          // Only a stop the source marks signable gets a Sign button.
+          ...(ask.sign === true ? { sign: true } : {}),
           // v2.3: the hook session a pending remote prompt is joined on (Claude: the item id; Codex: the
           // session_id its hook log is keyed by), and the tool call it is about when the hooks know it.
           ...(i.harness === "claude-code" || i.harness === "codex" ? { sessionId: d?.summary.sessionId ?? i.sessionId ?? i.id } : {}),

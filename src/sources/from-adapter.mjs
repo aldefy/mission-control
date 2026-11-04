@@ -94,7 +94,8 @@ function buildLanes(state, events, calls, live) {
   }
   for (const lane of lanes) {
     if (stop && stop.stage === lane.id && (lane.status === "waiting" || lane.status === "stopped") && typeof stop.detail === "string") lane.reason = stop.detail
-    if (stop && stop.stage === lane.id && lane.status === "waiting" && typeof stop.ts === "string") lane.ask = { since: stop.ts }
+    // sign: the source says this stop is answered by signing (Ronin's contract), so the card offers Approve.
+    if (stop && stop.stage === lane.id && lane.status === "waiting" && (typeof stop.ts === "string" || stop.sign === true)) lane.ask = { ...(typeof stop.ts === "string" ? { since: stop.ts } : {}), ...(stop.sign === true ? { sign: true } : {}) }
   }
   // An agent paused on a question or permission request: its lane waits on you, with the question as why.
   const ask = openAsk(events, state)
