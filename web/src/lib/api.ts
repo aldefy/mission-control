@@ -418,9 +418,13 @@ export type Settings = {
   notifyDone?: boolean
   /** Seconds a page notification stays before closing itself; 0 keeps it until dismissed. */
   notifyDismiss?: number
+  autostart?: { supported: boolean; enabled: boolean; managed?: boolean; label?: string; reason?: string | null }
+  /** Claude Code's cleanupPeriodDays for the config this dashboard reads; null without Claude Code. */
+  retention?: { configDir: string; days: number | null; isDefault: boolean; error?: string } | null
+  restarting?: boolean
 }
 export const useSettings = () => useFetch<Settings>("/api/settings")
-export async function postSettings(patch: { notify?: boolean; notifyDone?: boolean; notifyDismiss?: number }) {
+export async function postSettings(patch: { notify?: boolean; notifyDone?: boolean; notifyDismiss?: number; autostart?: boolean; retentionDays?: number }) {
   const r = await fetch("/api/settings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) })
   const j = await r.json().catch(() => ({}))
   if (!r.ok) throw new Error(j.error ?? `settings: ${r.status}`)

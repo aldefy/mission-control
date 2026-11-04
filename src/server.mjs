@@ -21,6 +21,7 @@ import { createTitles } from "./titles.mjs"
 import { createMarks } from "./marks.mjs"
 import { createSettings } from "./settings.mjs"
 import { createDispatcher, macNotify, startNotifier } from "./notify.mjs"
+import { createRetention } from "./retention.mjs"
 
 const DEFAULT_DIST = join(dirname(fileURLToPath(import.meta.url)), "..", "dist")
 
@@ -139,7 +140,7 @@ async function placeFirst(items, git, hideList, keep, limit = Infinity) {
 }
 
 async function apiV2(ctx, req, res, url, parts) {
-  const { registry, git, hide, titles, marks, settings, testNotify, pageFailed, pageShown, noteLog, now } = ctx
+  const { registry, git, hide, titles, marks, settings, autostart, onRestart, testNotify, pageFailed, pageShown, noteLog, now } = ctx
   const get = req.method === "GET" || req.method === "HEAD"
   const q = url.searchParams
   const all = q.get("all") === "1"
@@ -168,13 +169,42 @@ async function apiV2(ctx, req, res, url, parts) {
     return json(res, { via })
   }
   if (parts[0] === "settings" && parts.length === 1) {
-    if (get) return json(res, settings.get())
+    // Retention is Claude Code's own cleanupPeriodDays, in the config dir of the projects this dashboard reads.
+    const cc = registry.sources().find((s) => s.harness === "claude-code")
+    const retention = cc?.describe?.().source ? createRetention(dirname(cc.describe().source)) : null
+    const view = () => ({ ...settings.get(), autostart: autostart?.status() ?? { supported: false, enabled: false }, retention: retention?.get() ?? null })
+    if (get) return json(res, view())
     if (req.method !== "POST") return false
     const body = await readBody(req)
     const keys = Object.keys(body ?? {})
-    const ok = (k) => (k === "notifyDismiss" ? Number.isInteger(body[k]) && body[k] >= 0 && body[k] <= 600 : (k === "notify" || k === "notifyDone") && typeof body[k] === "boolean")
-    if (!keys.length || !keys.every(ok)) return json(res, { error: "send notify, notifyDone as booleans, notifyDismiss as 0-600 seconds" }, 400)
-    return json(res, settings.set(body))
+    const ok = (k) =>
+      k === "retentionDays" ? Number.isInteger(body[k]) && body[k] >= 1 && body[k] <= 3650
+      : k === "notifyDismiss" ? Number.isInteger(body[k]) && body[k] >= 0 && body[k] <= 600
+      : ["notify", "notifyDone", "autostart"].includes(k) && typeof body[k] === "boolean"
+    if (!keys.length || !keys.every(ok)) {
+      return json(res, { error: "send notify, notifyDone, autostart as booleans; notifyDismiss as 0-600 s; retentionDays as 1-3650" }, 400)
+    }
+    // Every precondition before any write, so a request is applied whole or not at all.
+    if ("autostart" in body && !autostart?.status().supported) return json(res, { error: autostart?.status().reason ?? "start at login is not available here" }, 501)
+    if ("retentionDays" in body) {
+      if (!retention) return json(res, { error: "no Claude Code config to change" }, 501)
+      const r = retention.get()
+      if (r.error) return json(res, { error: `${r.error}; not changing it` }, 409)
+    }
+    // Start at login first (launchctl can still refuse it, and then nothing else is written); if writing
+    // Claude Code's settings.json then fails, start at login is put back, so the request is whole or nothing.
+    let restart = false
+    if ("autostart" in body) restart = (await autostart.set(body.autostart)).restart
+    if ("retentionDays" in body) {
+      try { retention.set(body.retentionDays) } catch (e) {
+        if ("autostart" in body) await autostart.revert(body.autostart).catch(() => {})
+        throw e
+      }
+    }
+    if (keys.some((k) => k === "notify" || k === "notifyDone" || k === "notifyDismiss")) settings.set(body)
+    json(res, { ...view(), restarting: restart })
+    if (restart) setTimeout(() => onRestart?.(), 300)
+    return
   }
   if (get && parts[0] === "sources" && parts.length === 1) {
     await registry.list() // refresh per-source errors
@@ -338,7 +368,7 @@ const LOOPBACK = ["localhost", "127.0.0.1", "[::1]"]
  * `input` is one v1 adapter, one source, or an array of either. Every entry becomes a source;
  * the v1 routes (/api/runs, /api/run/..., /api/crew, /api/x/...) stay as aliases for the first adapter.
  */
-export function createServer(input, { port = 4319, distDir = DEFAULT_DIST, git, config = null, titlesPath = null, marksPath = null, settingsPath = null, notifyLogPath = null, notifier = null, ackWaitMs = 5000, now = () => Date.now(), loops = null, heartbeatMs = 15_000, eventsPollMs = 1000, claudeHome = null, codexHome = null, prs = null, remote = null } = {}) {
+export function createServer(input, { port = 4319, distDir = DEFAULT_DIST, git, config = null, titlesPath = null, marksPath = null, settingsPath = null, notifyLogPath = null, notifier = null, ackWaitMs = 5000, autostart = null, onRestart = null, now = () => Date.now(), loops = null, heartbeatMs = 15_000, eventsPollMs = 1000, claudeHome = null, codexHome = null, prs = null, remote = null } = {}) {
   const entries = Array.isArray(input) ? input : [input]
   // Loop thresholds from config.json {"loops": {...}} (re-read when the file changes); `loops` injects them.
   const loopCfg = typeof loops === "function" ? loops : loops ? () => loops : createLoopConfig(config)
@@ -371,7 +401,7 @@ export function createServer(input, { port = 4319, distDir = DEFAULT_DIST, git, 
   const shownOnPage = new Map() // group -> { m, at }: sent to a tab, until it reports back
   let pageFailed = () => {} // set once listening
   const pageShown = (group) => shownOnPage.delete(group)
-  const ctx = { adapter, registry, git, hide: createHide(config), now, claudeHome, codexHome, configPath: config, prs, budgets: createBudgets(config), windowConfig: createWindowConfig(config), titles, marks, listed, settings, noteLog, testNotify: (m) => notifyVia(m), pageFailed: (g) => pageFailed(g), pageShown }
+  const ctx = { adapter, registry, git, hide: createHide(config), now, claudeHome, codexHome, configPath: config, prs, budgets: createBudgets(config), windowConfig: createWindowConfig(config), titles, marks, listed, settings, noteLog, testNotify: (m) => notifyVia(m), pageFailed: (g) => pageFailed(g), pageShown, autostart, onRestart }
   // v2.3 remote answering: `remote` = { home, remoteDir, hooksDir, flags?, ... } turns on the runtime
   // control (status, POST /api/remote/enabled, the second listener). Without it, status is read-only defaults.
   let actualPort = port

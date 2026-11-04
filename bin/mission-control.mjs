@@ -132,10 +132,33 @@ const remoteFlags = args["remote-port"] !== undefined ? { port: Number(args["rem
 const remote = { home, remoteDir: remoteDirFromEnv(), hooksDir: process.env.MISSION_CONTROL_HOOKS_DIR || defaultHooksDir(home), flags: remoteFlags }
 // The dashboard's own state (renames, pins and the like) sits next to config.json, under the same home.
 const stateFile = (name) => joinPath(home, ".mission-control", name)
-try { srv = await createServer(adapters, { port, config, claudeHome: home, codexHome, prs, remote, titlesPath: stateFile("titles.json"), marksPath: stateFile("marks.json"),
-    settingsPath: stateFile("settings.json"), notifyLogPath: stateFile("logs/notifications.log"),
-    // Notifications are sent only once switched on in the sidebar (or to a phone that turned push on).
-    notifier: { mac: process.platform === "darwin" } }) } catch { process.exit(1) }
+// Start at login (a LaunchAgent per port); not for a stand-in home (the demo): it would go in the real ~/Library.
+const { createAutostart } = await import("../src/autostart.mjs")
+const autostart = port && !altHome ? createAutostart({ port, argv, script: fileURLToPath(import.meta.url) }) : null
+// Started by launchd: keep the agent file in step with what runs now (node path, script, carried variables).
+try { if (autostart?.refresh()) console.log("mission control: start at login updated for this node and script") } catch { /* next start */ }
+// Turning it on from a dashboard started by hand: launchd already accepted the agent (autostart.set), and its
+// copy is waiting for this port, so stop listening and leave.
+const onRestart = async () => {
+  await srv.close().catch(() => {})
+  process.exit(0)
+}
+const managed = !!autostart?.status().managed
+for (let tries = 0; ; tries++) {
+  try {
+    srv = await createServer(adapters, { port, config, claudeHome: home, codexHome, prs, remote, titlesPath: stateFile("titles.json"), marksPath: stateFile("marks.json"),
+      settingsPath: stateFile("settings.json"), notifyLogPath: stateFile("logs/notifications.log"),
+      // Notifications are sent only once switched on in the sidebar (or to a phone that turned push on).
+      notifier: { mac: process.platform === "darwin" }, autostart, onRestart })
+    break
+  } catch (e) {
+    // launchd's copy waits up to 15 s for the port (a hand-started dashboard handing over), then gives up.
+    if (managed && e?.code === "EADDRINUSE" && tries < 30) { await new Promise((r) => setTimeout(r, 500)); continue }
+    // Under launchd every failed start exits 0, logged above: KeepAlive (SuccessfulExit false) would otherwise
+    // retry a broken config or a taken port every 10 s for good.
+    process.exit(managed ? 0 : 1)
+  }
+}
 const started = await srv.remote.start()
 if (!started.ok) {
   console.error(`mission control: remote answering stays off: ${started.error}`)
