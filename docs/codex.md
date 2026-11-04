@@ -74,6 +74,12 @@ Costs are API list-price estimates, marked "est." on the page. OpenAI prices are
 
 The Turns tab lists one row per `token_count` event (a model call): input, cached input, cache write and output tokens with an estimated cost, sortable by cost, with a marker where the context dropped sharply.
 
+### Steering a running session (v2.6)
+
+A session's page has a **Steer this session** box while the session is open. A message sent there waits in `~/.mission-control/steer/` (0700) until the agent's current turn ends. The session's `Stop` hook then answers `{"decision": "block", "reason": <your message>}`, so the agent carries on with it as its next prompt instead of stopping. Messages sent during one turn are handed over together, in order, and each is delivered once. You can cancel one while it waits.
+
+Claude Code 2.1 marks the handover with a "Stop hook error occurred" notice; that is how it labels any Stop hook that keeps a turn going (checked with `claude -p`: the agent answers the queued message next). It needs the hooks. An idle session has no turn to end, so the message waits until the next turn you start in the terminal.
+
 ## Needs you: Codex hooks
 
 Codex CLI runs hooks configured in `~/.codex/hooks.json` (or `[hooks]` tables in `~/.codex/config.toml`, and per repository in `.codex/`). Hooks are on by default; `[features] hooks = false` in `config.toml` turns them off. Codex sends each hook a JSON object on stdin with `session_id`, `hook_event_name`, `cwd`, `model` and per-event fields. Its `PermissionRequest` event fires when Codex is about to ask you for approval. That is what Mission Control listens to.

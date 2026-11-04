@@ -1,4 +1,5 @@
 import { createServer as createHttpServer } from "node:http"
+import { HARNESSES, cancel, enqueue, listQueued } from "./steer.mjs"
 import { appendFileSync, existsSync, mkdirSync, renameSync, statSync } from "node:fs"
 import { readFile, realpath } from "node:fs/promises"
 import { dirname, extname, join, resolve, sep } from "node:path"
@@ -302,6 +303,20 @@ async function apiV2(ctx, req, res, url, parts) {
     if (!(await registry.get(source, id))) return json(res, { error: "no such item" }, 404)
     return json(res, marks.set(source, id, body))
   }
+  // Steer a running session: queue a message its Stop hook hands over when the current turn ends (src/steer.mjs).
+  if (parts[3] === "steer" && ctx.steerDir && HARNESSES.has(source)) {
+    if (get && parts.length === 4) return json(res, { queued: listQueued(ctx.steerDir, source, id) })
+    if (req.method === "POST" && parts.length === 4) {
+      const body = await readBody(req)
+      if (!(await registry.get(source, id))) return json(res, { error: "no such item" }, 404)
+      const r = enqueue(ctx.steerDir, { harness: source, sessionId: id, text: body?.text, from: "dashboard" })
+      return r.error ? json(res, r, 400) : json(res, { queued: listQueued(ctx.steerDir, source, id), sent: r })
+    }
+    if (req.method === "POST" && parts[4] === "cancel" && parts.length === 5) {
+      const body = await readBody(req)
+      return json(res, { cancelled: cancel(ctx.steerDir, source, id, body?.id), queued: listQueued(ctx.steerDir, source, id) })
+    }
+  }
   if (req.method === "POST" && parts[3] === "action" && parts.length === 5) {
     const name = decode(parts[4])
     const fn = Object.hasOwn(src.actions ?? {}, name) ? src.actions[name] : null
@@ -375,7 +390,7 @@ const SECURITY_HEADERS = {
  * `input` is one v1 adapter, one source, or an array of either. Every entry becomes a source;
  * the v1 routes (/api/runs, /api/run/..., /api/crew, /api/x/...) stay as aliases for the first adapter.
  */
-export function createServer(input, { port = 4319, distDir = DEFAULT_DIST, git, config = null, titlesPath = null, marksPath = null, settingsPath = null, notifyLogPath = null, notifier = null, ackWaitMs = 5000, autostart = null, onRestart = null, now = () => Date.now(), loops = null, heartbeatMs = 15_000, eventsPollMs = 1000, claudeHome = null, codexHome = null, prs = null, remote = null } = {}) {
+export function createServer(input, { port = 4319, distDir = DEFAULT_DIST, git, config = null, titlesPath = null, marksPath = null, settingsPath = null, notifyLogPath = null, notifier = null, ackWaitMs = 5000, autostart = null, onRestart = null, now = () => Date.now(), loops = null, heartbeatMs = 15_000, eventsPollMs = 1000, claudeHome = null, codexHome = null, prs = null, remote = null, steerDir = null } = {}) {
   const entries = Array.isArray(input) ? input : [input]
   // Loop thresholds from config.json {"loops": {...}} (re-read when the file changes); `loops` injects them.
   const loopCfg = typeof loops === "function" ? loops : loops ? () => loops : createLoopConfig(config)
@@ -408,7 +423,7 @@ export function createServer(input, { port = 4319, distDir = DEFAULT_DIST, git, 
   const shownOnPage = new Map() // group -> { m, at }: sent to a tab, until it reports back
   let pageFailed = () => {} // set once listening
   const pageShown = (group) => shownOnPage.delete(group)
-  const ctx = { adapter, registry, git, hide: createHide(config), now, claudeHome, codexHome, configPath: config, prs, budgets: createBudgets(config), windowConfig: createWindowConfig(config), titles, marks, listed, settings, noteLog, testNotify: (m) => notifyVia(m), pageFailed: (g) => pageFailed(g), pageShown, autostart, onRestart }
+  const ctx = { adapter, registry, git, hide: createHide(config), now, claudeHome, codexHome, configPath: config, prs, budgets: createBudgets(config), windowConfig: createWindowConfig(config), titles, marks, listed, settings, noteLog, testNotify: (m) => notifyVia(m), pageFailed: (g) => pageFailed(g), pageShown, autostart, onRestart, steerDir }
   // v2.3 remote answering: `remote` = { home, remoteDir, hooksDir, flags?, ... } turns on the runtime
   // control (status, POST /api/remote/enabled, the second listener). Without it, status is read-only defaults.
   let actualPort = port

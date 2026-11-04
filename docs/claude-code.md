@@ -208,6 +208,12 @@ With [remote answering](remote-answering.md) on and a phone paired, two hooks ma
 
 In every other case (no server, remote off, no paired device, timeout, the prompt answered in the terminal) the hook prints nothing and exits 0, and the terminal prompt works as before. An accepted phone answer adds a `RemoteAnswered` line to the session's hook log, which clears the desktop card. The question texts are kept only in the pending file under `~/.mission-control/remote/pending/` (0600, deleted when the hook exits), never in the hook log.
 
+### Steering a running session (v2.6)
+
+A session's page has a **Steer this session** box while the session is open. A message sent there waits in `~/.mission-control/steer/` (0700) until the agent's current turn ends. The session's `Stop` hook then answers `{"decision": "block", "reason": <your message>}`, so the agent carries on with it as its next prompt instead of stopping. Messages sent during one turn are handed over together, in order, and each is delivered once. You can cancel one while it waits.
+
+Claude Code 2.1 marks the handover with a "Stop hook error occurred" notice; that is how it labels any Stop hook that keeps a turn going (checked with `claude -p`: the agent answers the queued message next). It needs the hooks. An idle session has no turn to end, so the message waits until the next turn you start in the terminal.
+
 ## Needs you vs ready
 
 - **Waiting (Needs you)**: the session's last `PermissionRequest` or `Notification` has no `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `PermissionDenied`, `UserPromptSubmit` or `Stop` after it. That is Claude asking for permission or for an answer. A `PermissionRequest` from a subagent counts only once the permission `Notification` follows it, or for its first 10 seconds: background subagents in non-interactive mode cannot show a prompt, so Claude Code denies the call at once, and no `PermissionDenied` hook fires for that (it fires only in auto mode). The card shows the tool, its command or path, Claude's message and when it was asked. When a different prompt replaces the one on screen, the card shows a **new prompt** badge and flashes once (no flash with reduced motion), so an answer meant for the old prompt is not given to the new one.
