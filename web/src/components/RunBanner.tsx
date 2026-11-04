@@ -22,18 +22,25 @@ function List({ title, items, tone }: { title: string; items: string[]; tone?: s
  * The top of a run's page: is it done (and verified?), waiting for you, or working, said once and plainly,
  * with the app as the run last saw it. Finished must be obvious; so must "built, but nobody verified this".
  */
-export function RunBannerView({ runId, events, live, canPreview, act, actions = [] }: { runId: string; events: Record<string, any>[]; live: boolean; canPreview: boolean; act?: (name: string, body: object) => Promise<unknown>; actions?: string[] }) {
-  const b = runBanner(events, live)
+export function RunBannerView({ runId, events, live, canPreview, act, actions = [], state }: { runId: string; events: Record<string, any>[]; live: boolean; canPreview: boolean; act?: (name: string, body: object) => Promise<unknown>; actions?: string[]; state?: Record<string, any> | null }) {
+  const b = runBanner(events, live, state ?? null)
   const shot = canPreview ? latestPreview(events) : null
   if (!b && !shot) return null
   const tone =
-    b?.kind === "done" ? (b.verified ? "border-done/60 bg-done/10" : "border-looping/60 bg-looping/10")
+    b?.kind === "done" ? (b.verified || (!b.checked && !b.unverified.length && !b.questions.length && !b.findings) ? "border-done/60 bg-done/10" : "border-looping/60 bg-looping/10")
       : b?.kind === "stopped" || b?.kind === "asking" ? "border-needs-you/50 bg-needs-you/10"
         : "border-border bg-card/40"
   return (
     <section data-run-banner={b?.kind ?? "preview"} className={cn("flex flex-wrap items-start gap-4 rounded-xl border p-4", tone)}>
       <div className="flex min-w-[16rem] flex-1 flex-col gap-2">
-        {b?.kind === "done" && (
+        {b?.kind === "done" && !b.verified && !b.checked && !b.unverified.length && !b.questions.length && !b.findings && (
+          <>
+            <h2 className="flex items-center gap-2 text-lg font-semibold"><CheckCircle2 className="size-5 text-done" />Done</h2>
+            <p className="text-xs text-muted-foreground">{b.branch ? <>On <code>{b.branch}</code>. </> : null}No checks ran in this run, so there was nothing to verify (a research or planning run).</p>
+            <List title="Assumed without asking" items={b.assumed} />
+          </>
+        )}
+        {b?.kind === "done" && (b.verified || b.checked || b.unverified.length > 0 || b.questions.length > 0 || b.findings > 0) && (
           <>
             <h2 className="flex items-center gap-2 text-lg font-semibold">
               {b.verified ? <CheckCircle2 className="size-5 text-done" /> : <CircleAlert className="size-5 text-looping" />}

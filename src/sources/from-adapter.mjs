@@ -97,12 +97,13 @@ function buildLanes(state, events, calls, live) {
     if (stop && stop.stage === lane.id && lane.status === "waiting" && typeof stop.ts === "string") lane.ask = { since: stop.ts }
   }
   // An agent paused on a question or permission request: its lane waits on you, with the question as why.
-  const ask = openAsk(events)
+  const ask = openAsk(events, state)
   const asking = ask && lanes.find((l) => l.id === ask.stage)
   if (asking) {
     asking.status = "waiting"
     asking.reason = `${ask.stage} ${askText(ask)}`
-    if (typeof ask.ts === "string") asking.ask = { since: ask.ts }
+    // agent: an agent inside the run asks (answered with the run page's form), not a stop to sign.
+    asking.ask = { ...(typeof ask.ts === "string" ? { since: ask.ts } : {}), agent: true }
   }
   const byId = new Map(lanes.map((l) => [l.id, l]))
   for (const e of events) {
@@ -141,7 +142,7 @@ export function fromAdapter(adapter, { loops = () => LOOP_DEFAULTS, now = () => 
     const state = run.state && typeof run.state === "object" ? run.state : {}
     const calls = buildCalls(id, events)
     const lanes = buildLanes(state, events, calls, Boolean(run.live))
-    const waiting = isWaiting(events)
+    const waiting = isWaiting(events, state)
     const tokens = zeroTokens()
     let cost = 0
     for (const l of lanes) { add(tokens, l.tokens); cost += l.cost }

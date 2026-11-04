@@ -68,3 +68,9 @@ test("a run whose agent asks something is waiting, with the question as its lane
   assert.equal(lane.status, "waiting")
   assert.equal(lane.reason, "research asks 2 questions: Which decision should this inform?")
 })
+
+test("an ask is no longer open once its answer is saved in state, or the run ended", () => {
+  assert.equal(isWaiting([ask], { answers: { f1: { q0: "a" } } }), false)
+  assert.equal(isWaiting([ask], { answers: { other: {} } }), true)
+  assert.equal(isWaiting([ask, { type: "run.end", status: "done" }]), false)
+})

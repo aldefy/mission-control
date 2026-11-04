@@ -26,17 +26,21 @@ export const OWNER_RULES = new Set(["human", "unverified"])
 const ASKS = new Set(["question.asked", "approval.needed"])
 const ANSWERS = new Set(["question.answered", "approval"])
 
-/** The agent question or permission request the run is paused on now (the event), or null. */
-export function openAsk(events) {
+/**
+ * The agent question or permission request the run is paused on now (the event), or null. `state`: the run's
+ * state, whose `answers` / `approvals` hold an answer the moment you give it (before the agent acknowledges it).
+ */
+export function openAsk(events, state = null) {
+  const given = new Set([...Object.keys(state?.answers ?? {}), ...Object.keys(state?.approvals ?? {})])
   const open = new Map()
   for (const e of events ?? []) {
     if (!e || typeof e !== "object") continue
     if (ASKS.has(e.type) && e.id != null) open.set(String(e.id), e)
     else if (ANSWERS.has(e.type) && e.id != null) open.delete(String(e.id))
     else if (e.type === "stage.end" || e.type === "stop") { for (const [k, a] of open) if (a.stage === e.stage || e.type === "stop") open.delete(k) }
-    else if (e.type === "run.start" || e.type === "run.resume") open.clear()
+    else if (e.type === "run.start" || e.type === "run.resume" || e.type === "run.end") open.clear()
   }
-  return [...open.values()].at(-1) ?? null
+  return [...open.values()].filter((a) => !given.has(String(a.id))).at(-1) ?? null
 }
 
 /** One line for what an agent asks: how many questions and the first one, or the action it wants permission for. */
@@ -53,4 +57,4 @@ export function askText(a) {
 }
 
 /** True when the run waits on you: an owner stop, or an agent question nobody answered yet. */
-export const isWaiting = (events) => OWNER_RULES.has(openStop(events)?.rule) || openAsk(events) !== null
+export const isWaiting = (events, state = null) => OWNER_RULES.has(openStop(events)?.rule) || openAsk(events, state) !== null

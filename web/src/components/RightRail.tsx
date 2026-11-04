@@ -11,7 +11,7 @@ export function askOf(d: ItemDetail): Ask | null {
   const stop = openStopOf(d)
   if (stop) return { waiting: stop.waiting, lane: stop.stage, rule: stop.rule, detail: stop.detail, ts: stop.ts }
   const w = d.lanes.find((l) => l.status === "waiting")
-  if (w || d.summary.waiting) return { waiting: true, lane: w?.label, detail: w?.reason, ts: w?.ask?.since ?? d.summary.updatedAt ?? undefined, tool: w?.ask?.tool, target: w?.ask?.target }
+  if (w || d.summary.waiting) return { waiting: true, lane: w?.label, detail: w?.reason, ts: w?.ask?.since ?? d.summary.updatedAt ?? undefined, tool: w?.ask?.tool, target: w?.ask?.target, agent: w?.ask?.agent === true }
   return null
 }
 

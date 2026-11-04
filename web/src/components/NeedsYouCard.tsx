@@ -18,6 +18,8 @@ export type Ask = {
   /** The tool the prompt is about and its command or path (secret-safe, first 120 chars), when known. */
   tool?: string
   target?: string
+  /** An agent inside the run asks (a question or permission request): answered in the run page's form, not by signing. */
+  agent?: boolean
 }
 
 /**
@@ -25,8 +27,8 @@ export type Ask = {
  * Stopped by any other rule: a grey "stopped" card, never "failed".
  */
 export function NeedsYouCard({ source, id, ask, actions, now, onActed, flash = false }: { source: string; id: string; ask: Ask; actions: string[]; now: number; onActed?: () => void; flash?: boolean }) {
-  const canSign = ask.waiting && actions.includes("sign")
-  const canSay = ask.waiting && actions.includes("say")
+  const canSign = ask.waiting && !ask.agent && actions.includes("sign")
+  const canSay = ask.waiting && !ask.agent && actions.includes("say")
   const [mode, setMode] = useState<"idle" | "back">("idle")
   const [notes, setNotes] = useState("")
   const [say, setSay] = useState("")
@@ -76,8 +78,13 @@ export function NeedsYouCard({ source, id, ask, actions, now, onActed, flash = f
       )}
       <p className="font-mono text-xs text-faint">
         {ask.ts ? (ago(ask.ts, now) === "now" ? "asked just now · " : `asked ${ago(ask.ts, now)} ago · `) : ""}
-        {ask.waiting ? (canSign || canSay ? "everything else waits until you answer" : "answer it where the agent runs") : "nothing runs until it is resumed"}
+        {ask.waiting ? (canSign || canSay || ask.agent ? "everything else waits until you answer" : "answer it where the agent runs") : "nothing runs until it is resumed"}
       </p>
+      {ask.agent && (
+        <Button variant="outline" className="justify-start" onClick={() => { const b = document.querySelector<HTMLElement>("[data-run-banner]"); b?.scrollIntoView({ block: "start", behavior: "smooth" }); b?.querySelector<HTMLElement>("input, button")?.focus({ preventScroll: true }) }}>
+          Answer it at the top of the page
+        </Button>
+      )}
       {canSign && mode === "idle" && (
         <div className="flex flex-col gap-2">
           <Button disabled={busy} onClick={() => void run("sign", { notes: "" }, "Signed")} className="justify-start">

@@ -4,7 +4,7 @@ import { latestPreview, qaActivity, runBanner } from "./run-banner"
 describe("runBanner", () => {
   it("done: verified, or built with what nobody verified listed", () => {
     const h = { type: "handoff", branch: "ronin/x", verified: false, unverified: ["qa: share sheet"], assumed: ["backend: no flag"], questions: [{ stage: "backend", text: "flag?" }], findings: [{}] }
-    expect(runBanner([{ type: "stage.start", stage: "qa" }, h], false)).toEqual({ kind: "done", verified: false, branch: "ronin/x", unverified: ["qa: share sheet"], assumed: ["backend: no flag"], questions: ["backend: flag?"], findings: 1 })
+    expect(runBanner([{ type: "stage.start", stage: "qa" }, h], false)).toEqual({ kind: "done", verified: false, checked: false, branch: "ronin/x", unverified: ["qa: share sheet"], assumed: ["backend: no flag"], questions: ["backend: flag?"], findings: 1 })
     expect(runBanner([{ type: "handoff", verified: true }], false)).toMatchObject({ kind: "done", verified: true })
   })
   it("stopped: the last stop nothing cleared; a resume clears it", () => {

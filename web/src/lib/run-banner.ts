@@ -10,7 +10,7 @@ export type AskField = { key: string; title?: string; description?: string; type
 export type RunBanner =
   | { kind: "asking"; stage: string | null; id: string; question: true; title: string; fields: AskField[] }
   | { kind: "asking"; stage: string | null; id: string; question: false; action: string; resources: string[]; message: string | null }
-  | { kind: "done"; verified: boolean; branch: string | null; unverified: string[]; assumed: string[]; questions: string[]; findings: number }
+  | { kind: "done"; verified: boolean; checked: boolean; branch: string | null; unverified: string[]; assumed: string[]; questions: string[]; findings: number }
   | { kind: "stopped"; rule: string; stage: string | null; detail: string }
   | { kind: "running"; stage: string | null; doing: string | null }
   | null
@@ -22,7 +22,7 @@ const CLEARS = new Set(["stage.start", "human.input", "run.resume", "run.start"]
  * The one line the run page leads with, from the run's own events: finished (verified, or what nobody
  * verified), stopped for you (why), or running (which stage, doing what). Null before anything happened.
  */
-export function runBanner(events: Ev[], live: boolean): RunBanner {
+export function runBanner(events: Ev[], live: boolean, state: Ev | null = null): RunBanner {
   let lastStop = -1, lastClear = -1, lastHandoff = -1
   events.forEach((e, i) => {
     if (e.type === "stop") lastStop = i
@@ -30,7 +30,7 @@ export function runBanner(events: Ev[], live: boolean): RunBanner {
     if (e.type === "handoff") lastHandoff = i
   })
   // An agent inside the run paused on a question or a permission request: the most urgent thing to show.
-  const ask = openAsk(events)
+  const ask = openAsk(events, state)
   if (ask) {
     const base = { kind: "asking" as const, stage: ask.stage ?? null, id: String(ask.id) }
     return ask.type === "approval.needed"
@@ -46,6 +46,8 @@ export function runBanner(events: Ev[], live: boolean): RunBanner {
     return {
       kind: "done",
       verified: h.verified === true,
+      // A run with no checks (a research run) has nothing to verify: done, not "not verified".
+      checked: (Array.isArray(h.checks) && h.checks.length > 0) || h.check != null || (h.qa?.pass ?? 0) + (h.qa?.fail ?? 0) > 0,
       branch: h.branch ?? null,
       unverified: Array.isArray(h.unverified) ? h.unverified.map(String) : [],
       assumed: Array.isArray(h.assumed) ? h.assumed.map(String) : [],
