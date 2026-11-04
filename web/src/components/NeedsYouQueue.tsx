@@ -63,7 +63,7 @@ const BTN = "inline-flex h-7 items-center rounded-md px-2.5 text-xs whitespace-n
 function Ask({ e, actions, now, onActed, isNew = false }: { e: NeedsYou; actions: string[]; now: number; onActed?: () => void; isNew?: boolean }) {
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null)
-  const canSign = actions.includes("sign")
+  const canSign = e.sign === true && actions.includes("sign")
   const canSay = actions.includes("say")
   const href = itemHref(e.source, e.id)
   const sign = async () => {

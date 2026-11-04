@@ -20,6 +20,8 @@ export type Ask = {
   target?: string
   /** An agent inside the run asks (a question or permission request): answered in the run page's form, not by signing. */
   agent?: boolean
+  /** The source answers this stop by signing (Ronin's contract): only then Approve / Send back. */
+  sign?: boolean
 }
 
 /**
@@ -27,7 +29,7 @@ export type Ask = {
  * Stopped by any other rule: a grey "stopped" card, never "failed".
  */
 export function NeedsYouCard({ source, id, ask, actions, now, onActed, flash = false }: { source: string; id: string; ask: Ask; actions: string[]; now: number; onActed?: () => void; flash?: boolean }) {
-  const canSign = ask.waiting && !ask.agent && actions.includes("sign")
+  const canSign = ask.waiting && !ask.agent && ask.sign === true && actions.includes("sign")
   const canSay = ask.waiting && !ask.agent && actions.includes("say")
   const [mode, setMode] = useState<"idle" | "back">("idle")
   const [notes, setNotes] = useState("")

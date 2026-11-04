@@ -11,11 +11,19 @@ afterEach(() => {
 const NOW = Date.parse("2026-01-01T10:10:00Z")
 
 describe("NeedsYouCard", () => {
-  it("an owner stop says Needs you and offers the declared actions", () => {
-    render(<NeedsYouCard source="ronin" id="r1" now={NOW} ask={{ waiting: true, lane: "qa", rule: "human", detail: "copy?" }} actions={["sign", "say"]} />)
+  it("a signable owner stop says Needs you and offers the declared actions", () => {
+    render(<NeedsYouCard source="ronin" id="r1" now={NOW} ask={{ waiting: true, lane: "architect", rule: "human", detail: "Sign the contract", sign: true }} actions={["sign", "say"]} />)
     expect(screen.getByLabelText("Needs you")).toBeTruthy()
     expect(screen.getByRole("button", { name: "Approve (sign)" })).toBeTruthy()
     expect(screen.getByRole("button", { name: "Send back with notes" })).toBeTruthy()
+    expect(screen.getByLabelText("Answer")).toBeTruthy()
+  })
+
+  it("an owner question that is not a sign-off offers no Approve, only an answer", () => {
+    render(<NeedsYouCard source="ronin" id="r1" now={NOW} ask={{ waiting: true, lane: "product", rule: "human", detail: "Which feature should this run build first?" }} actions={["sign", "say"]} />)
+    expect(screen.getByLabelText("Needs you")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Approve (sign)" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Send back with notes" })).toBeNull()
     expect(screen.getByLabelText("Answer")).toBeTruthy()
   })
 
@@ -39,7 +47,7 @@ describe("NeedsYouCard", () => {
     const fetch = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ ok: true, resumed: false, error: "spawn ronin ENOENT" }) }))
     vi.stubGlobal("fetch", fetch)
     const onActed = vi.fn()
-    render(<NeedsYouCard source="ronin" id="r1" now={NOW} ask={{ waiting: true, lane: "qa", rule: "human" }} actions={["sign"]} onActed={onActed} />)
+    render(<NeedsYouCard source="ronin" id="r1" now={NOW} ask={{ waiting: true, lane: "architect", rule: "human", sign: true }} actions={["sign"]} onActed={onActed} />)
     fireEvent.click(screen.getByRole("button", { name: "Approve (sign)" }))
     await waitFor(() => expect(screen.getByRole("status").textContent).toBe("Signed, but the run could not resume: spawn ronin ENOENT"))
     expect(screen.getByRole("status").className).toContain("text-failed")
