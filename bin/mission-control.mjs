@@ -39,6 +39,13 @@ if (argv[0] === "hook") {
       remoteDir = remoteDirFromEnv()
       output = await holdForAnswer({ harness: codex ? "codex" : "claude-code", input: { ...input, hook_event_name: ev }, hooksDir, remoteDir, onPending: (id) => { pending = id } })
     }
+    // 8. the turn ended: a message queued from the dashboard or phone becomes the next prompt (src/steer.mjs)
+    if (ev === "Stop" && typeof input.session_id === "string") {
+      const { claimAll, stopHookOutput, defaultSteerDir } = await import("../src/steer.mjs")
+      const harness = codex ? "codex" : "claude-code"
+      const messages = claimAll(process.env.MISSION_CONTROL_STEER_DIR || defaultSteerDir(), harness, input.session_id)
+      output = stopHookOutput(messages)
+    }
   } catch { /* never disturb the session */ }
   await cleanup()
   if (output) { try { writeSync(1, output) } catch { /* nothing to do */ } }
@@ -149,7 +156,9 @@ for (let tries = 0; ; tries++) {
     srv = await createServer(adapters, { port, config, claudeHome: home, codexHome, prs, remote, titlesPath: stateFile("titles.json"), marksPath: stateFile("marks.json"),
       settingsPath: stateFile("settings.json"), notifyLogPath: stateFile("logs/notifications.log"),
       // Notifications are sent only once switched on in the sidebar (or to a phone that turned push on).
-      notifier: { mac: process.platform === "darwin" }, autostart, onRestart })
+      notifier: { mac: process.platform === "darwin" }, autostart, onRestart,
+      // Messages queued for a running session; its Stop hook reads the same folder (src/steer.mjs).
+      steerDir: process.env.MISSION_CONTROL_STEER_DIR || (await import("../src/steer.mjs")).defaultSteerDir() })
     break
   } catch (e) {
     // launchd's copy waits up to 15 s for the port (a hand-started dashboard handing over), then gives up.

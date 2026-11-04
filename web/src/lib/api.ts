@@ -462,3 +462,27 @@ export function actionNote(done: string, result: any): ActionNote {
   }
   return { ok: true, text: `${done}.` }
 }
+
+export type Steer = { id: string; text: string; from: string; at: string }
+
+/** Messages waiting for a running session; its Stop hook hands them over when the current turn ends. */
+export async function getSteer(source: string, id: string) {
+  const r = await fetch(`${itemUrl(source, id)}/steer`)
+  const j = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(j.error ?? `steer: ${r.status}`)
+  return (j.queued ?? []) as Steer[]
+}
+
+export async function postSteer(source: string, id: string, text: string) {
+  const r = await fetch(`${itemUrl(source, id)}/steer`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) })
+  const j = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(j.error ?? `steer: ${r.status}`)
+  return (j.queued ?? []) as Steer[]
+}
+
+export async function cancelSteer(source: string, id: string, steerId: string) {
+  const r = await fetch(`${itemUrl(source, id)}/steer/cancel`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: steerId }) })
+  const j = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(j.error ?? `steer: ${r.status}`)
+  return (j.queued ?? []) as Steer[]
+}

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import { Pencil } from "lucide-react"
 import { RenameForm } from "@/components/RenameForm"
 import { CopyResume } from "@/components/CopyResume"
+import { Steer } from "@/components/Steer"
 import { IconAction } from "@/components/IconAction"
 import { Retry } from "@/components/Retry"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -113,6 +114,9 @@ function Header({ d, onRenamed }: { d: ItemDetail; onRenamed: () => void }) {
         </p>
       )}
       {s.resume && <CopyResume full command={s.resume} open={s.open} className="basis-full" />}
+      {s.kind === "session" && s.open && !s.parkedInto && (s.source === "claude-code" || s.source === "codex") && (
+        <Steer source={s.source} id={s.id} working={shown === "working" || shown === "waiting"} className="basis-full" />
+      )}
     </header>
   )
 }
