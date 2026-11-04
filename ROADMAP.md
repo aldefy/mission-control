@@ -51,6 +51,10 @@ Session management, from Ayush Priyam's work (#3, #4, #5):
 - CI runs on Node 20.19, 22 and 24.
 - Fixed: session titles disappeared from the Recent table on a 1440px-wide screen.
 
+## Done in v2.6.3
+
+- **A stop can name what to read before you answer.** Ronin's "Sign the contract" stop now lists contract.md and cross-lane-tests.md, with how many rules and tests each has, as links above Approve (sign). The files open through the source's `raw` extra.
+
 ## Done in v2.6.2
 
 - **Approve (sign) only where signing applies.** Needs you offered Approve (sign) / Send back on every owner stop of a source that can sign, so a Ronin product question ("Which feature should this run build first?") showed them and the click failed with "no contract waiting to be signed". A stop now says it is signable (`sign: true` on the stop event); only those get Sign, on the card and in the queue. Every other question keeps the answer box and Answer….
