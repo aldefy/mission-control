@@ -3,6 +3,8 @@ import { Pencil } from "lucide-react"
 import { RenameForm } from "@/components/RenameForm"
 import { CopyResume } from "@/components/CopyResume"
 import { Steer } from "@/components/Steer"
+import { LiveTrace } from "@/components/LiveTrace"
+import { RunBannerView } from "@/components/RunBanner"
 import { IconAction } from "@/components/IconAction"
 import { Retry } from "@/components/Retry"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -179,6 +181,7 @@ export default function Item({ source, id, tab, call }: { source: string; id: st
   return (
     <div className="mx-auto flex max-w-[1500px] flex-col gap-4">
       <Header d={d} onRenamed={item.reload} />
+      {v1Run && <RunBannerView runId={id} events={events} live={!!d.summary.live} canPreview={(src?.extras ?? caps.data?.extras ?? []).includes("raw")} />}
       {d.summary.recap && (
         <section aria-label="Recap" className="rounded-lg border bg-card px-3 py-2 text-sm">
           <span className="mr-2 font-mono text-xs text-faint">recap{d.summary.recap.ts ? ` · ${ago(d.summary.recap.ts, now)} ago` : ""}</span>
@@ -259,7 +262,13 @@ export default function Item({ source, id, tab, call }: { source: string; id: st
               (v1Run && v1 ? (
                 <Thread runId={id} idea={idea} events={events} stop={v1.stop} cards={v1.cards} canSay={actions.includes("say")} />
               ) : (
-                <Chat source={source} id={id} lanes={d.lanes} live={d.summary.live} calls={calls.data} />
+                // Chat with its trace beside it on a wide screen; the Calls tab has the full list.
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_26rem]">
+                  <Chat source={source} id={id} lanes={d.lanes} live={d.summary.live} calls={calls.data} />
+                  <LiveTrace className="hidden max-h-[78vh] xl:sticky xl:top-4 xl:flex" calls={calls.data ?? []} live={!!d.summary.live}
+                    laneLabel={(l) => d.lanes.find((x) => x.id === l)?.label ?? l}
+                    onOpen={(c) => (location.hash = toHash({ view: "item", source, id, tab: "calls", call: c }))} />
+                </div>
               ))}
           </TabsContent>
           {tabs.includes("board") && v1 && (
