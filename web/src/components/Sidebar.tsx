@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { BarChart3, ChevronRight, Eye, EyeOff, House, Search, Smartphone } from "lucide-react"
 import type { Placed, ProjectSummary, WorktreeSummary } from "@/lib/api"
 import { toHash, type Route } from "@/lib/route"
 import { filterTree, rollupCounts, worktreeLabel, type ChipFilter } from "@/lib/tree"
 import { cn } from "@/lib/utils"
+import { useShared } from "@/lib/projects-context"
 import { StatusDot } from "@/components/StatusDot"
 
 const count = (ws: WorktreeSummary[]) => ws.reduce((n, w) => n + w.counts.items, 0)
@@ -148,6 +149,8 @@ export function Sidebar({
   onShowHidden?: (v: boolean) => void
 }) {
   const [query, setQuery] = useState("")
+  const { resets } = useShared()
+  useEffect(() => setQuery(""), [resets]) // the logo resets the view
   const [toggled, setToggled] = useState<Record<string, boolean>>({})
   const [emptyShown, setEmptyShown] = useState<Record<string, boolean>>({})
   const tree = useMemo(() => filterTree(projects, query, filter), [projects, query, filter])

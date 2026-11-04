@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 import { connectServerEvents } from "@/lib/server-events"
 import { useOverview, useProjects, type Overview, type ProjectSummary, type Remote } from "@/lib/api"
 import { visibleProjects, type ChipFilter } from "@/lib/tree"
@@ -15,6 +15,10 @@ type Shared = {
   overview: Remote<Overview>
   filter: ChipFilter | null
   setFilter: (f: ChipFilter | null) => void
+  /** Bumped by resetView: views with their own filters (sidebar search, Recent's Show) clear them when it changes. */
+  resets: number
+  /** Back to the plain home view: no status chip, no hidden projects, and every view's own filters cleared. */
+  resetView: () => void
 }
 const Ctx = createContext<Shared | null>(null)
 
@@ -26,11 +30,17 @@ export function ProjectsProvider({ children }: { children: ReactNode }) {
   const [showHidden, setShowHidden] = useState(false)
   const overview = useOverview(showHidden)
   const [filter, setFilter] = useState<ChipFilter | null>(null)
+  const [resets, setResets] = useState(0)
+  const resetView = useCallback(() => {
+    setFilter(null)
+    setShowHidden(false)
+    setResets((n) => n + 1)
+  }, [])
   const all = projects.data
   const visible = useMemo(() => visibleProjects(all ?? [], showHidden), [all, showHidden])
   const hiddenCount = useMemo(() => (all ?? []).filter((p) => p.hidden).length, [all])
   return (
-    <Ctx.Provider value={{ projects, visible, hiddenCount, showHidden, setShowHidden, overview, filter, setFilter }}>{children}</Ctx.Provider>
+    <Ctx.Provider value={{ projects, visible, hiddenCount, showHidden, setShowHidden, overview, filter, setFilter, resets, resetView }}>{children}</Ctx.Provider>
   )
 }
 

@@ -133,7 +133,7 @@ export default function ProjectPage({ projectKey, worktree }: { projectKey: stri
         aside={filter && <span className="font-mono text-xs text-faint">filtered by the status chip</span>}
         bodyClassName="p-2"
       >
-        <ItemTable items={items} showProject={false} now={now} empty={filter ? "Nothing here matches the status filter" : "No runs or sessions yet"} />
+        <ItemTable items={items} showProject={false} now={now} onChanged={project.reload} empty={filter ? "Nothing here matches the status filter" : "No runs or sessions yet"} />
       </Panel>
     </div>
   )

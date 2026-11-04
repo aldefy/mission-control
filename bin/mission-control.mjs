@@ -130,7 +130,9 @@ const { remoteDirFromEnv } = await import("../src/remote/state.mjs")
 const { defaultHooksDir } = await import("../src/hooks.mjs")
 const remoteFlags = args["remote-port"] !== undefined ? { port: Number(args["remote-port"]), host: String(args["remote-host"]).toLowerCase() } : null
 const remote = { home, remoteDir: remoteDirFromEnv(), hooksDir: process.env.MISSION_CONTROL_HOOKS_DIR || defaultHooksDir(home), flags: remoteFlags }
-try { srv = await createServer(adapters, { port, config, claudeHome: home, codexHome, prs, remote }) } catch { process.exit(1) }
+// The dashboard's own state (renames, pins and the like) sits next to config.json, under the same home.
+const stateFile = (name) => joinPath(home, ".mission-control", name)
+try { srv = await createServer(adapters, { port, config, claudeHome: home, codexHome, prs, remote, titlesPath: stateFile("titles.json"), marksPath: stateFile("marks.json") }) } catch { process.exit(1) }
 const started = await srv.remote.start()
 if (!started.ok) {
   console.error(`mission control: remote answering stays off: ${started.error}`)

@@ -1,7 +1,20 @@
 const OVERVIEW_POOL = 6
 
 /** One place that fans out over every source. Later tasks add sources by passing more to createRegistry. */
-export function createRegistry(sources) {
+export function createRegistry(sources, { titles = null, marks = null } = {}) {
+  // A title the owner set on the page wins; the source's own stays as originalTitle. Pinned and archived
+  // come from marks (an archived session that is open still shows; listed() hides it once it closes).
+  const withOwnerEdits = (source, id, x) => {
+    // A chat that changed session id keeps the rename given under its earlier id.
+    const t = titles?.get(source, id) ?? (x.continuedFrom ? titles?.get(source, x.continuedFrom) : null)
+    const m = marks?.get(source, id)
+    return {
+      ...x,
+      ...(t ? { title: t, originalTitle: x.title } : {}),
+      ...(m?.pinned ? { pinned: true } : {}),
+      ...(m?.archived ? { archived: true } : {}),
+    }
+  }
   const byName = new Map()
   for (const s of sources) {
     // Two sources of one kind (two native dirs) keep distinct names: native, native-2, ...
@@ -22,7 +35,7 @@ export function createRegistry(sources) {
     const lists = await Promise.all(
       all().map(async (s) => {
         try {
-          const items = (await s.listItems()).map((i) => ({ ...i, source: s.name }))
+          const items = (await s.listItems()).map((i) => withOwnerEdits(s.name, i.id, { ...i, source: s.name }))
           errors.delete(s.name)
           return items
         } catch (e) {
@@ -37,7 +50,7 @@ export function createRegistry(sources) {
   async function get(source, id) {
     const s = byName.get(source)
     const item = s ? await s.getItem(id) : null
-    return item ? { ...item, summary: { ...item.summary, source: s.name } } : null
+    return item ? { ...item, summary: withOwnerEdits(s.name, id, { ...item.summary, source: s.name }) } : null
   }
 
   /**
@@ -46,9 +59,11 @@ export function createRegistry(sources) {
    */
   async function overview(items) {
     items ??= await list()
-    const counts = { waiting: 0, working: 0, stopped: 0, done: 0, ready: 0, looping: 0 }
+    // closed (open === false) is counted apart from its status, which stays idle.
+    const counts = { waiting: 0, working: 0, stopped: 0, done: 0, ready: 0, looping: 0, closed: 0 }
     const ready = []
     for (const i of items) {
+      if (i.open === false) counts.closed++
       if (i.ready && i.status !== "waiting") counts.ready++
       if (i.status === "waiting") counts.waiting++
       else if (i.status === "working") counts.working++

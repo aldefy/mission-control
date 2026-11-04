@@ -239,7 +239,11 @@ Local only, no accounts, no cloud. There are two listeners.
 - answers only requests whose `Host` is `localhost`, `127.0.0.1` or `[::1]` on its own port (anything else gets 403), so a web page cannot reach it through DNS rebinding;
 - takes a POST only with `content-type: application/json` (else 415) and, when the browser sends an `Origin`, only from `http://localhost:<port>`, `http://127.0.0.1:<port>` or `http://[::1]:<port>` (else 403), so another site cannot submit to the action routes.
 
-It has exactly one write route, `POST /api/remote/enabled`, behind the Remote answering switch. Its guards, in order: the loopback bind; the `Host` check above (403); a **required** `Origin` equal to `http://<the request's Host>` (missing or foreign: 403); `content-type: application/json` (else 415); a body of exactly `{"enabled": true|false}` (else 400). It can only turn remote answering on or off. `GET /api/remote/status` is read-only and never returns a token, secret or hash. No pairing, answering, device or revoke route exists on `:4319`.
+Besides the action routes, it has these write routes, all behind the two guards above:
+
+- `POST /api/item/:source/:id/title` (`{ "title": string }`, empty restores the source's title) and `POST /api/item/:source/:id/mark` (`{ "pinned"?: boolean, "archived"?: boolean }`). They write only the dashboard's own `~/.mission-control/titles.json` and `marks.json` (under `MISSION_CONTROL_HOME` when set); Claude Code's and Codex's files stay read-only. An unknown item is 404, a bad body 400.
+
+For remote answering there is exactly one write route, `POST /api/remote/enabled`, behind the Remote answering switch. Its guards, in order: the loopback bind; the `Host` check above (403); a **required** `Origin` equal to `http://<the request's Host>` (missing or foreign: 403); `content-type: application/json` (else 415); a body of exactly `{"enabled": true|false}` (else 400). It can only turn remote answering on or off. `GET /api/remote/status` is read-only and never returns a token, secret or hash. No pairing, answering, device or revoke route exists on `:4319`.
 
 **Remote answering, off by default.** When you turn it on (`--remote-port` with `--remote-host`, `mission-control remote on`, or the switch), a second listener opens on `127.0.0.1` only (default port 4330). It is meant to sit behind `tailscale serve --bg --https=443 http://127.0.0.1:4330`, which puts it on your tailnet over HTTPS at `https://<name>.ts.net`. It:
 

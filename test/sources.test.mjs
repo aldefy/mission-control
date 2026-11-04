@@ -81,7 +81,7 @@ test("registry lists several sources and reports an overview", async () => {
   assert.equal((await reg.get("second", "20261101-0900-done")).summary.source, "second")
   assert.equal(await reg.get("nope", "x"), null)
   const ov = await reg.overview()
-  assert.deepEqual(ov.counts, { waiting: 2, working: 0, stopped: 0, done: 2, ready: 0, looping: 0 })
+  assert.deepEqual(ov.counts, { waiting: 2, working: 0, stopped: 0, done: 2, ready: 0, looping: 0, closed: 0 })
   assert.deepEqual(ov.needsYou.map((n) => [n.source, n.id, n.title, n.lane, n.detail]).sort(), [
     ["native", "20261101-0930-stopped", "add a farewell page", "qa", "needs a human decision on the farewell copy"],
     ["second", "20261101-0930-stopped", "add a farewell page", "qa", "needs a human decision on the farewell copy"],
@@ -119,7 +119,7 @@ test("server: v2 routes over two sources, v1 routes still answer", async () => {
     assert.deepEqual((await j("/api/sources")).map((s) => s.name), ["native", "other"])
     assert.equal((await j("/api/items")).length, 6)
     const ov = await j("/api/overview")
-    assert.deepEqual(ov.counts, { waiting: 2, working: 0, stopped: 0, done: 2, ready: 0, looping: 0 })
+    assert.deepEqual(ov.counts, { waiting: 2, working: 0, stopped: 0, done: 2, ready: 0, looping: 0, closed: 0 })
     assert.equal(ov.needsYou[0].lane, "qa")
     const item = await j("/api/item/other/20261101-0930-stopped")
     assert.equal(item.summary.source, "other")

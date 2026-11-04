@@ -1,8 +1,8 @@
 import type { ItemSummary, ProjectSummary, Status, StatusCounts, WorktreeSummary } from "./api"
 import { toHash } from "./route"
 
-/** The status chips' filters. `stopped` covers failed too; `done` means done today; `ready` is idle and waiting for your next prompt. */
-export type ChipFilter = "waiting" | "looping" | "ready" | "working" | "stopped" | "done"
+/** The status chips' filters. `stopped` covers failed too; `done` means done today; `ready` is idle and waiting for your next prompt; `closed` has no running process. */
+export type ChipFilter = "waiting" | "looping" | "ready" | "working" | "stopped" | "done" | "closed"
 
 const RANK: Status[] = ["waiting", "looping", "working", "failed", "stopped", "done", "idle"]
 
@@ -28,6 +28,7 @@ export function matchesFilter(i: ItemSummary, f: ChipFilter | null, now = new Da
   if (!f) return true
   if (f === "ready") return !!i.ready && i.status !== "waiting"
   if (f === "stopped") return i.status === "stopped" || i.status === "failed"
+  if (f === "closed") return i.open === false
   if (f === "done") return i.status === "done" && !!i.updatedAt && localDay(new Date(i.updatedAt)) === localDay(now)
   return i.status === f
 }
@@ -37,6 +38,7 @@ export function filterCount(w: Pick<WorktreeSummary, "counts" | "doneToday">, f:
   if (!f) return w.counts.items
   if (f === "ready") return w.counts.ready ?? 0
   if (f === "stopped") return w.counts.stopped + w.counts.failed
+  if (f === "closed") return w.counts.closed ?? 0
   if (f === "done") return w.doneToday
   return w.counts[f]
 }

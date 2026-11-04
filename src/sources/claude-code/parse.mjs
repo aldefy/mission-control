@@ -25,7 +25,7 @@ function userText(e) {
 
 /** Cheap look at the head of a file: cwd, branch, version, title, first timestamp. */
 export function peek(text) {
-  const out = { cwd: null, branch: null, version: null, sessionId: null, title: null, summary: null, startedAt: null }
+  const out = { cwd: null, branch: null, version: null, sessionId: null, title: null, summary: null, customTitle: null, aiTitle: null, startedAt: null }
   let firstUser = null
   for (const e of lines(text)) {
     out.cwd ??= str(e.cwd)
@@ -34,9 +34,11 @@ export function peek(text) {
     out.sessionId ??= str(e.sessionId)
     out.startedAt ??= str(e.timestamp)
     if (e.type === "summary") out.summary ??= str(e.summary)
+    if (e.type === "custom-title") out.customTitle = str(e.customTitle) ?? out.customTitle
+    if (e.type === "ai-title") out.aiTitle = str(e.aiTitle) ?? out.aiTitle
     firstUser ??= userText(e)
   }
-  out.title = clip(out.summary ?? firstUser ?? "", 160) || null
+  out.title = clip(out.customTitle ?? out.aiTitle ?? out.summary ?? firstUser ?? "", 160) || null
   return out
 }
 
@@ -90,7 +92,7 @@ export function transcriptAcc(laneId = "main") {
   const byUse = new Map()
   const msgs = new Map() // message key -> { model, usage }
   let anon = 0
-  const meta = { cwd: null, branch: null, version: null, sessionId: null, summary: null, title: null }
+  const meta = { cwd: null, branch: null, version: null, sessionId: null, summary: null, customTitle: null, aiTitle: null, recap: null, title: null }
   let firstTs = null, lastTs = null, firstModel = null, errors = 0, firstUser = null
   function feed(e) {
     const ts = str(e.timestamp)
@@ -100,6 +102,12 @@ export function transcriptAcc(laneId = "main") {
     meta.version ??= str(e.version)
     meta.sessionId ??= str(e.sessionId)
     if (e.type === "summary") meta.summary ??= str(e.summary)
+    if (e.type === "custom-title") meta.customTitle = str(e.customTitle) ?? meta.customTitle
+    if (e.type === "ai-title") meta.aiTitle = str(e.aiTitle) ?? meta.aiTitle
+    // A recap Claude Code writes when you come back to a session: where things stand and what is next.
+    if (e.type === "system" && e.subtype === "away_summary" && str(e.content)) {
+      meta.recap = { text: e.content.replace(/\s*\(disable recaps in \/config\)\s*$/, ""), ts: ts ?? null }
+    }
     firstUser ??= userText(e)
     const m = e.message && typeof e.message === "object" ? e.message : null
     if (e.type === "assistant" && m) {
@@ -144,7 +152,7 @@ export function transcriptAcc(laneId = "main") {
       messages.push({ model, ts: ts ?? null, tokens: t })
       if (model) models[model] = (models[model] ?? 0) + 1
     }
-    const out = { ...meta, title: clip(meta.summary ?? firstUser ?? "", 160) || null }
+    const out = { ...meta, title: clip(meta.customTitle ?? meta.aiTitle ?? meta.summary ?? firstUser ?? "", 160) || null }
     // Snapshot the calls: later lines (a tool_result) mutate the live call objects.
     const snap = calls.map((c) => ({ ...c }))
     const open = [...snap].reverse().find((c) => c.ok === undefined)

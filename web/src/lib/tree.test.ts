@@ -21,7 +21,7 @@ const item = (id: string, status: ItemSummary["status"], extra: Partial<ItemSumm
   ...extra,
 })
 
-const counts = (c: Partial<StatusCounts> = {}): StatusCounts => ({ items: 0, live: 0, waiting: 0, looping: 0, working: 0, stopped: 0, failed: 0, done: 0, idle: 0, ...c })
+const counts = (c: Partial<StatusCounts> = {}): StatusCounts => ({ items: 0, live: 0, closed: 0, waiting: 0, looping: 0, working: 0, stopped: 0, failed: 0, done: 0, idle: 0, ...c })
 const wt = (path: string, branch: string | null, c: Partial<StatusCounts>, extra: Partial<WorktreeSummary> = {}): WorktreeSummary => ({
   path,
   branch,
