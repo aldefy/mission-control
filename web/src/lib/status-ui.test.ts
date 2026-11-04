@@ -41,7 +41,7 @@ describe("one status map", () => {
   })
   it("amber (needs-you) colours only needs-you things", () => {
     // allowed: status maps, needs-you cards/queue, waits, the map's you node and needs-you arrows/markers
-    const ok = /status-ui|StatusChips|NeedsYou|LaneCards|ItemMap|FlowStrip|Findings|Thread|Trace|Sidebar|WorktreeCard|LaneSheet|StageBar|DriftPanel|events\.ts|Agent|Project\.tsx|ProjectPage|remote\/Prompt|globals/
+    const ok = /status-ui|StatusChips|NeedsYou|LaneCards|ItemMap|FlowStrip|Findings|Thread|Trace|Sidebar|WorktreeCard|LaneSheet|StageBar|DriftPanel|events\.ts|Agent|Project\.tsx|ProjectPage|remote\/Prompt|RunBanner|globals/
     const hits = files(SRC).filter((f) => !ok.test(f)).flatMap((f) =>
       readFileSync(f, "utf8").split("\n").map((l, i) => `${f.slice(SRC.length + 1)}:${i + 1}`).filter((_, i) => /(text|bg|border|ring|stroke|fill|shadow)-needs-you/.test(readFileSync(f, "utf8").split("\n")[i])),
     )
