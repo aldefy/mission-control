@@ -129,6 +129,8 @@ The guide has a complete worked run, writer snippets in Node, Python and Bash, a
 
 **Each session** can be renamed from the page (the pencil by its title; Reset brings back Claude Code's own), pinned to the top, archived (it leaves lists and counts, and comes back while it is open again), and resumed: **copy resume** gives `cd <folder> && claude --resume <id>`, with `CLAUDE_CONFIG_DIR` for a second account. Names and marks live in `~/.mission-control/titles.json` and `marks.json`; Claude Code's files are never written. The session page also shows Claude Code's latest recap, and links the two halves of a chat that moved to a new session id (it is listed once, under the newest).
 
+![A session page: Claude Code's recap, the resume command and its lanes](docs/screenshots/session.png)
+
 **The sidebar's settings**, all off until you turn them on:
 
 - **Notifications:** Needs you and Done. Each one goes to exactly one place: a dashboard tab in view, else a paired phone with push on (Needs you only), else a background tab, else a macOS notification. Dismiss after, browser permission, and a **send test** that says where the test went.
