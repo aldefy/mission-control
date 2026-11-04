@@ -1,4 +1,4 @@
-import { isWaiting, openStop } from "../status.mjs"
+import { askText, isWaiting, openAsk, openStop, OWNER_RULES } from "../status.mjs"
 import { LOOP_DEFAULTS, applyLoops, runCalls } from "../loops.mjs"
 import { defaultTz, localDay } from "../usage.mjs"
 
@@ -61,7 +61,7 @@ function buildCalls(id, events) {
 
 /** Status of a stage that only appears in events: the open stop, else its last start/end. */
 function eventStageStatus(id, events, stop, live) {
-  if (stop && stop.stage === id) return stop.rule === "human" ? "waiting" : "stopped"
+  if (stop && stop.stage === id) return OWNER_RULES.has(stop.rule) ? "waiting" : "stopped"
   let last = null
   for (const e of events) {
     if (e.stage !== id) continue
@@ -80,7 +80,7 @@ function buildLanes(state, events, calls, live) {
     const status = st?.status === "running" && !live ? "idle" : STAGE_STATUS[st?.status] ?? "idle"
     const lane = { id, label: labels.get(id) ?? id, kind: "stage", status, calls: 0, errors: 0, tokens: zeroTokens(), cost: 0 }
     if (stop && stop.stage === id && status !== "done" && status !== "failed") {
-      lane.status = stop.rule === "human" ? "waiting" : "stopped"
+      lane.status = OWNER_RULES.has(stop.rule) ? "waiting" : "stopped"
     }
     return lane
   })
@@ -95,6 +95,14 @@ function buildLanes(state, events, calls, live) {
   for (const lane of lanes) {
     if (stop && stop.stage === lane.id && (lane.status === "waiting" || lane.status === "stopped") && typeof stop.detail === "string") lane.reason = stop.detail
     if (stop && stop.stage === lane.id && lane.status === "waiting" && typeof stop.ts === "string") lane.ask = { since: stop.ts }
+  }
+  // An agent paused on a question or permission request: its lane waits on you, with the question as why.
+  const ask = openAsk(events)
+  const asking = ask && lanes.find((l) => l.id === ask.stage)
+  if (asking) {
+    asking.status = "waiting"
+    asking.reason = `${ask.stage} ${askText(ask)}`
+    if (typeof ask.ts === "string") asking.ask = { since: ask.ts }
   }
   const byId = new Map(lanes.map((l) => [l.id, l]))
   for (const e of events) {

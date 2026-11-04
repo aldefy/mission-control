@@ -1,4 +1,4 @@
-import { openStop } from "../../../src/status.mjs"
+import { openStop, OWNER_RULES } from "../../../src/status.mjs"
 
 // The crew as a graph (for the map) and as cards (for the sidebar), derived from a run's state and events.
 
@@ -80,10 +80,10 @@ export const nodeOf = (g: CrewGraph, stage: string) =>
 export type Stop = { stage?: string; rule?: string; detail?: string; ts?: string; waiting: boolean }
 
 /** The stop the run is on now, by the shared rule (src/status.mjs): the last `stop` not followed by
- * stage.start, human.input, run.resume or run.start. `waiting` only for an owner stop (rule "human"). */
+ * stage.start, human.input, run.resume or run.start. `waiting` only for an owner stop (rule "human" or "unverified"). */
 export function currentStop(_state: State, events: Ev[]): Stop | null {
   const e = openStop(events)
-  return e ? { stage: e.stage, rule: e.rule, detail: e.detail, ts: e.ts, waiting: e.rule === "human" } : null
+  return e ? { stage: e.stage, rule: e.rule, detail: e.detail, ts: e.ts, waiting: OWNER_RULES.has(String(e.rule)) } : null
 }
 
 export type StageStatus = "running" | "stopped" | "done" | "skipped" | "failed" | "idle"

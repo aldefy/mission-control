@@ -29,3 +29,12 @@ describe("runBanner", () => {
     expect(qaActivity(ev)).toEqual([{ kind: "cp_device_interact", text: "tap Save" }, { kind: "check", text: "npm test", ok: false }, { kind: "not verified", text: "E3 not checked", ok: false }])
   })
 })
+
+describe("runBanner: an agent asks", () => {
+  it("a pending question or permission request comes first, until answered", () => {
+    const q = { type: "question.asked", stage: "research", id: "f1", title: "Questions", fields: [{ key: "q0", title: "Focus", options: [{ value: "a" }] }, { foo: 1 }] }
+    expect(runBanner([{ type: "stage.start", stage: "research" }, q], true)).toEqual({ kind: "asking", stage: "research", id: "f1", question: true, title: "Questions", fields: [{ key: "q0", title: "Focus", options: [{ value: "a" }] }] })
+    expect(runBanner([q, { type: "question.answered", id: "f1" }], true)).toMatchObject({ kind: "running" })
+    expect(runBanner([{ type: "approval.needed", stage: "qa", id: "p1", action: "bash", resources: ["ls"] }], true)).toEqual({ kind: "asking", stage: "qa", id: "p1", question: false, action: "bash", resources: ["ls"], message: null })
+  })
+})

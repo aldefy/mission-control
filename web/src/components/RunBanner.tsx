@@ -1,5 +1,6 @@
 import { CheckCircle2, CircleAlert, Loader2, PauseCircle } from "lucide-react"
 import { latestPreview, runBanner } from "@/lib/run-banner"
+import { AskCard, AskIcon } from "@/components/AskCard"
 import { cn } from "@/lib/utils"
 
 const rawUrl = (runId: string, path: string, v: string) => `/api/x/raw/${encodeURIComponent(runId)}?path=${encodeURIComponent(path)}${v ? `&v=${encodeURIComponent(v)}` : ""}`
@@ -21,13 +22,13 @@ function List({ title, items, tone }: { title: string; items: string[]; tone?: s
  * The top of a run's page: is it done (and verified?), waiting for you, or working, said once and plainly,
  * with the app as the run last saw it. Finished must be obvious; so must "built, but nobody verified this".
  */
-export function RunBannerView({ runId, events, live, canPreview }: { runId: string; events: Record<string, any>[]; live: boolean; canPreview: boolean }) {
+export function RunBannerView({ runId, events, live, canPreview, act, actions = [] }: { runId: string; events: Record<string, any>[]; live: boolean; canPreview: boolean; act?: (name: string, body: object) => Promise<unknown>; actions?: string[] }) {
   const b = runBanner(events, live)
   const shot = canPreview ? latestPreview(events) : null
   if (!b && !shot) return null
   const tone =
     b?.kind === "done" ? (b.verified ? "border-done/60 bg-done/10" : "border-looping/60 bg-looping/10")
-      : b?.kind === "stopped" ? "border-needs-you/50 bg-needs-you/10"
+      : b?.kind === "stopped" || b?.kind === "asking" ? "border-needs-you/50 bg-needs-you/10"
         : "border-border bg-card/40"
   return (
     <section data-run-banner={b?.kind ?? "preview"} className={cn("flex flex-wrap items-start gap-4 rounded-xl border p-4", tone)}>
@@ -46,6 +47,16 @@ export function RunBannerView({ runId, events, live, canPreview }: { runId: stri
             <List title="Questions for you" items={b.questions} tone="text-failed" />
             <List title="Assumed without asking" items={b.assumed} />
             {b.findings > 0 && <p className="text-xs text-failed">Review left {b.findings} finding{b.findings > 1 ? "s" : ""} open.</p>}
+          </>
+        )}
+        {b?.kind === "asking" && (
+          <>
+            <h2 className="flex items-center gap-2 text-lg font-semibold">
+              <AskIcon className="size-5 text-needs-you" />
+              Needs you: {b.stage ?? "an agent"} {b.question ? "asks" : "wants permission"}
+            </h2>
+            {b.question && b.title && <p className="text-xs text-muted-foreground">{b.title}. The agent is paused until you answer.</p>}
+            <AskCard ask={b} act={act ?? (async () => { throw new Error("this source cannot answer from here") })} canReply={!!act && actions.includes("reply")} canApprove={!!act && actions.includes("approve")} />
           </>
         )}
         {b?.kind === "stopped" && (
