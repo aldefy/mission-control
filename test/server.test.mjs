@@ -245,14 +245,14 @@ test("every dashboard response forbids framing and sniffing (clickjacking)", asy
   try {
     for (const path of ["/", "/api/items", "/nope"]) {
       const r = await fetch(`http://127.0.0.1:${srv.port}${path}`)
-      assert.equal(r.headers.get("x-frame-options"), "DENY", path)
-      assert.match(r.headers.get("content-security-policy") ?? "", /frame-ancestors 'none'/, path)
+      assert.equal(r.headers.get("x-frame-options"), "SAMEORIGIN", path)
+      assert.match(r.headers.get("content-security-policy") ?? "", /frame-ancestors 'self'/, path)
       assert.equal(r.headers.get("x-content-type-options"), "nosniff", path)
     }
     // fetch drops a custom Host header, so ask with http.request: a refused host gets the headers too.
     const { request } = await import("node:http")
     const foreign = await new Promise((done, fail) => request({ host: "127.0.0.1", port: srv.port, path: "/", headers: { host: "evil.example" } }, (r) => { r.resume(); done(r) }).on("error", fail).end())
     assert.equal(foreign.statusCode, 403)
-    assert.equal(foreign.headers["x-frame-options"], "DENY")
+    assert.equal(foreign.headers["x-frame-options"], "SAMEORIGIN")
   } finally { await srv.close() }
 })

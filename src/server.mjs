@@ -364,8 +364,9 @@ async function api(ctx, req, res, url) {
 
 const LOOPBACK = ["localhost", "127.0.0.1", "[::1]"]
 const SECURITY_HEADERS = {
-  "x-frame-options": "DENY",
-  "content-security-policy": "frame-ancestors 'none'",
+  // Only the dashboard's own pages may frame it (the release media show the phone page in a frame); no other site.
+  "x-frame-options": "SAMEORIGIN",
+  "content-security-policy": "frame-ancestors 'self'",
   "x-content-type-options": "nosniff",
   "referrer-policy": "no-referrer",
 }

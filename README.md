@@ -252,7 +252,7 @@ Local only, no accounts, no cloud. There are two listeners.
 **The dashboard, `:4319`.** It binds `127.0.0.1` and `::1` and:
 
 - answers only requests whose `Host` is `localhost`, `127.0.0.1` or `[::1]` on its own port (anything else gets 403), so a web page cannot reach it through DNS rebinding;
-- sends `X-Frame-Options: DENY` and `frame-ancestors 'none'` on every response, so no other site can frame the dashboard and trick clicks on its switches;
+- sends `X-Frame-Options: SAMEORIGIN` and `frame-ancestors 'self'` on every response, so no other site can frame the dashboard and trick clicks on its switches;
 - takes a POST only with `content-type: application/json` (else 415) and, when the browser sends an `Origin`, only from `http://localhost:<port>`, `http://127.0.0.1:<port>` or `http://[::1]:<port>` (else 403), so another site cannot submit to the action routes.
 
 Besides the action routes, it has these write routes, all behind the two guards above:
