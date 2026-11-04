@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url"
 const argv = process.argv.slice(2)
 
 // Hook entry points load only the hook modules: they run inside Claude Code / Codex and must stay fast,
-// silent and harmless. Every path exits 0. Output is printed only for an accepted phone answer (v2.3).
+// silent and harmless. Every path exits 0. Output is printed only for an accepted phone answer (v2.3) or a
+// steer message handed over at Stop (v2.6).
 if (argv[0] === "hook") {
   let output = ""
   let pending = null

@@ -274,10 +274,10 @@ export default function Item({ source, id, tab, call }: { source: string; id: st
               (v1Run && v1 ? (
                 <Thread runId={id} idea={idea} events={events} stop={v1.stop} cards={v1.cards} canSay={actions.includes("say")} />
               ) : (
-                // Chat with its trace beside it on a wide screen; the Calls tab has the full list.
-                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_26rem]">
+                // Chat with its trace beside it on a very wide screen (the right rail takes room), under it otherwise; the Calls tab has the full list.
+                <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_26rem]">
                   <Chat source={source} id={id} lanes={d.lanes} live={d.summary.live} calls={calls.data} />
-                  <LiveTrace className="hidden max-h-[78vh] xl:sticky xl:top-4 xl:flex" calls={calls.data ?? []} live={!!d.summary.live}
+                  <LiveTrace className="max-h-[45vh] 2xl:sticky 2xl:top-4 2xl:max-h-[78vh]" calls={calls.data ?? []} live={!!d.summary.live}
                     laneLabel={(l) => d.lanes.find((x) => x.id === l)?.label ?? l}
                     onOpen={(c) => (location.hash = toHash({ view: "item", source, id, tab: "calls", call: c }))} />
                 </div>
