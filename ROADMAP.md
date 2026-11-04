@@ -51,6 +51,21 @@ Session management, from Ayush Priyam's work (#3, #4, #5):
 - CI runs on Node 20.19, 22 and 24.
 - Fixed: session titles disappeared from the Recent table on a 1440px-wide screen.
 
+## Done in v2.6
+
+From a study of iii.dev and ThreadPage:
+
+- **Steer a running session.** A session page has a Steer box. The message waits until the agent's turn ends. Its Stop hook then hands it over as the next prompt (Claude Code and Codex), so the agent carries on with it. Each message is delivered once, and a waiting one can be cancelled.
+- **The trace beside the chat**, live: every tool call by lane, with duration and failures, pushed rather than polled. It sits beside the chat on very wide screens and under it otherwise.
+- **The run page says plainly where a run stands:**
+  - Done and verified;
+  - built but not verified, with what is left listed first;
+  - waiting for you, and why;
+  - or working on a given stage.
+
+  The latest app screenshot sits beside it, and the QA tab shows QA working step by step.
+- **Pane plugins.** An adapter can ship its own tabs (`ui`, one ES module, see docs/own-harness.md). Ronin uses it for a Reports tab: each stage's checked report of what it ran, what it did not verify and what it assumed.
+
 ## Done in v2.5.1
 
 A security update, from an audit of 2.5.0:
