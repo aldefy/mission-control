@@ -51,6 +51,15 @@ Session management, from Ayush Priyam's work (#3, #4, #5):
 - CI runs on Node 20.19, 22 and 24.
 - Fixed: session titles disappeared from the Recent table on a 1440px-wide screen.
 
+## Done in v2.5.1
+
+A security update, from an audit of 2.5.0:
+
+- Fixed: a crafted session title could run a command through a macOS notification (escaping happened before the 200-character cut). The text now goes to `osascript` as arguments to a fixed script.
+- The phone offers Allow only when it shows the whole action: a one-line Bash or Read (or Codex shell) command or path of up to 120 characters. Everything else is answered at the computer, and the server and the hook refuse a phone answer to it.
+- No other site can frame the dashboard (`X-Frame-Options: SAMEORIGIN`, `frame-ancestors 'self'`).
+- For contributors: a release skill and the scripts behind the release media.
+
 ## Later
 
 - Cost per task (spec-kit task, Ronin stage).
