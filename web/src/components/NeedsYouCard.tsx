@@ -22,6 +22,8 @@ export type Ask = {
   agent?: boolean
   /** The source answers this stop by signing (Ronin's contract): only then Approve / Send back. */
   sign?: boolean
+  /** Run files to read before answering (Ronin's contract), opened through the source's `raw` extra. */
+  read?: { label: string; path: string }[]
 }
 
 /**
@@ -86,6 +88,15 @@ export function NeedsYouCard({ source, id, ask, actions, now, onActed, flash = f
         <Button variant="outline" className="justify-start" onClick={() => { const b = document.querySelector<HTMLElement>("[data-run-banner]"); b?.scrollIntoView({ block: "start", behavior: "smooth" }); b?.querySelector<HTMLElement>("input, button")?.focus({ preventScroll: true }) }}>
           Answer it at the top of the page
         </Button>
+      )}
+      {ask.waiting && ask.read && ask.read.length > 0 && (
+        <div data-read-first className="flex flex-col gap-1">
+          <span className="font-mono text-xs text-faint">Read first</span>
+          {ask.read.map((r) => (
+            <a key={r.path} href={`/api/item/${encodeURIComponent(source)}/${encodeURIComponent(id)}/x/raw?path=${encodeURIComponent(r.path)}`} target="_blank" rel="noreferrer"
+              className="truncate text-xs underline decoration-faint underline-offset-2 hover:text-foreground">{r.label}</a>
+          ))}
+        </div>
       )}
       {canSign && mode === "idle" && (
         <div className="flex flex-col gap-2">
